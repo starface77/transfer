@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dynamic-segmented-memory"
+version = "0.1.0"
+description = "Dynamic Segmented Memory engine for scalable model context routing."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "DSM Contributors"}]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.5", "torch>=2.0"]
+fast = ["faiss-cpu>=1.7.0"]
+field = ["torch>=2.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dsm", "src/narefield"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
