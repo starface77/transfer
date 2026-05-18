@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useRef, useCallback, type KeyboardEvent, useEffect } from "react"
-import { Square, Mic, MicOff, Paperclip, X, Sparkles, Plus } from "lucide-react"
+import { Square, Mic, MicOff, Paperclip, X, Sparkles, Plus, Rocket, Eye, Check, ChevronDown, ArrowRight, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
@@ -16,12 +16,19 @@ import Image from "next/image"
 import { AnimatedOrb } from "./animated-orb"
 import { AudioWaveform } from "./audio-waveform"
 
-export type AIModel = "google/gemini-2.0-flash-001" | "openai/gpt-4o" | "anthropic/claude-sonnet-4"
+export type AIModel =
+  | "google/gemini-3.1-pro"
+  | "google/gemini-3.1-flash"
+  | "openai/gpt-5.5"
+  | "openai/o3-mini"
+  | "anthropic/claude-4.7-opus"
 
 export const AI_MODELS: { id: AIModel; name: string; icon: string }[] = [
-  { id: "google/gemini-2.0-flash-001", name: "Gemini", icon: "/images/google.webp" },
-  { id: "openai/gpt-4o", name: "GPT-4o", icon: "/images/gpt.png" },
-  { id: "anthropic/claude-sonnet-4", name: "Claude", icon: "/images/claude.svg" },
+  { id: "google/gemini-3.1-pro", name: "Gemini 3.1 Pro", icon: "/images/google.webp" },
+  { id: "google/gemini-3.1-flash", name: "Gemini 3.1 Flash", icon: "/images/google.webp" },
+  { id: "openai/gpt-5.5", name: "GPT-5.5 Flagship", icon: "/images/gpt.png" },
+  { id: "openai/o3-mini", name: "o3-mini Reasoning", icon: "/images/gpt.png" },
+  { id: "anthropic/claude-4.7-opus", name: "Claude 4.7 Opus", icon: "/images/claude.svg" },
 ]
 
 interface ComposerProps {
@@ -31,10 +38,33 @@ interface ComposerProps {
   disabled?: boolean
   selectedModel: AIModel
   onModelChange: (model: AIModel) => void
+  bottomOffset?: number
 }
 
-export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel, onModelChange }: ComposerProps) {
+const PLAN_MODES = [
+  {
+    id: "autonomous" as const,
+    title: "Autonomous",
+    description: "Scan, plan, write, and heal code with zero manual oversight.",
+    icon: Rocket,
+  },
+  {
+    id: "interactive" as const,
+    title: "Interactive",
+    description: "Collaborative plan generation, feedback, and interactive approval.",
+    icon: Sparkles,
+  },
+  {
+    id: "analyze" as const,
+    title: "Analyze Only",
+    description: "Read codebase state, explain structures, and query DSM memory.",
+    icon: Search,
+  },
+]
+
+export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel, onModelChange, bottomOffset }: ComposerProps) {
   const [value, setValue] = useState("")
+  const [activePlanMode, setActivePlanMode] = useState<"autonomous" | "interactive" | "analyze">("autonomous")
   const [isRecording, setIsRecording] = useState(false)
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
   const [showImageBounce, setShowImageBounce] = useState(false)
@@ -192,9 +222,14 @@ export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel,
   }, [])
 
   const currentModel = AI_MODELS.find((m) => m.id === selectedModel) || AI_MODELS[0]
+  const selectedModeObj = PLAN_MODES.find((m) => m.id === activePlanMode) || PLAN_MODES[0]
+  const SelectedIcon = selectedModeObj.icon
 
   return (
-    <div className={cn("fixed bottom-6 left-0 right-0 px-4 pointer-events-none z-10", hasAnimated && "composer-intro")}>
+    <div 
+      className={cn("absolute left-0 right-0 px-4 pointer-events-none z-10 transition-all duration-300", hasAnimated && "composer-intro")}
+      style={{ bottom: bottomOffset !== undefined ? `${bottomOffset}px` : "24px" }}
+    >
       <div className="relative max-w-3xl mx-auto pointer-events-auto">
         <div
           className={cn(
@@ -241,7 +276,7 @@ export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel,
               disabled={isStreaming || disabled}
               rows={1}
               className={cn(
-                "flex-1 resize-none bg-transparent py-1.5 text-[15px] font-light text-stone-800 placeholder:text-stone-400/80 leading-relaxed",
+                "flex-1 resize-none bg-transparent py-1.5 text-[15px] font-normal text-stone-800 placeholder:text-stone-400/80 leading-relaxed",
                 "focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
                 "max-h-[200px] overflow-y-auto no-scrollbar",
               )}
@@ -285,7 +320,17 @@ export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel,
                     className="h-8 px-2.5 rounded-full text-stone-500 hover:text-stone-800 hover:bg-stone-100 transition-colors flex items-center gap-1.5 font-medium text-[12px]"
                     onClick={playClickSound}
                   >
-                    <Sparkles strokeWidth={2} className="w-[14px] h-[14px]" />
+                    {currentModel.icon ? (
+                      <Image
+                        src={currentModel.icon}
+                        alt={currentModel.name}
+                        width={14}
+                        height={14}
+                        className="rounded-sm object-contain shrink-0"
+                      />
+                    ) : (
+                      <Sparkles strokeWidth={2} className="w-[14px] h-[14px]" />
+                    )}
                     <span>{currentModel.name}</span>
                   </Button>
                 </DropdownMenuTrigger>
@@ -366,19 +411,74 @@ export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel,
                   />
                 </button>
               ) : (
-                <button
-                  onClick={handleSend}
-                  disabled={(!value.trim() && !uploadedImage) || disabled}
-                  className={cn(
-                    "relative h-8 w-8 shrink-0 transition-transform rounded-full flex items-center justify-center",
-                    (!value.trim() && !uploadedImage) || disabled
-                      ? "opacity-40 cursor-not-allowed grayscale"
-                      : "cursor-pointer hover:scale-105 active:scale-95",
-                  )}
-                  aria-label="Send message"
-                >
-                  <AnimatedOrb size={32} />
-                </button>
+                <div className="flex items-center gap-1 shrink-0 bg-stone-50 border border-stone-200/40 rounded-full p-0.5 shadow-sm">
+                  {/* Dropdown trigger */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        onClick={playClickSound}
+                        className="h-8 px-2.5 rounded-full text-stone-600 hover:bg-stone-100/60 flex items-center gap-1 font-medium text-[12.5px] transition-colors"
+                      >
+                        <SelectedIcon className="w-3.5 h-3.5 text-stone-500" />
+                        <span>{selectedModeObj.title}</span>
+                        <ChevronDown className="w-3 h-3 text-stone-400" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      side="top"
+                      sideOffset={12}
+                      className="w-[280px] p-1.5 rounded-[20px] border border-stone-250/20 shadow-xl bg-white/95 backdrop-blur-xl z-[9999]"
+                    >
+                      {PLAN_MODES.map((mode) => {
+                        const Icon = mode.icon
+                        const isActive = activePlanMode === mode.id
+                        return (
+                          <DropdownMenuItem
+                            key={mode.id}
+                            onClick={() => {
+                              playClickSound()
+                              setActivePlanMode(mode.id)
+                            }}
+                            className={cn(
+                              "flex flex-col items-start gap-1 cursor-pointer rounded-[14px] px-3.5 py-2.5 transition-colors select-none outline-none",
+                              isActive ? "bg-stone-50" : "hover:bg-stone-50/50",
+                              "focus:!bg-stone-50/80 focus:!text-stone-900 data-[active]:!bg-stone-50/80 data-[focus]:!bg-stone-50/80"
+                            )}
+                          >
+                            <div className="flex items-center justify-between w-full">
+                              <div className="flex items-center gap-2">
+                                <Icon className={cn("w-3.5 h-3.5", isActive ? "text-stone-900" : "text-stone-500")} />
+                                <span className={cn("text-[13px] font-semibold", isActive ? "text-stone-900" : "text-stone-700")}>
+                                  {mode.title}
+                                </span>
+                              </div>
+                              {isActive && <Check className="w-3.5 h-3.5 text-stone-900" />}
+                            </div>
+                            <span className="text-[11px] text-stone-400 font-light leading-relaxed">
+                              {mode.description}
+                            </span>
+                          </DropdownMenuItem>
+                        )
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  {/* Submit arrow button */}
+                  <button
+                    onClick={handleSend}
+                    disabled={(!value.trim() && !uploadedImage) || disabled}
+                    className={cn(
+                      "relative h-8 w-8 shrink-0 transition-transform rounded-full flex items-center justify-center bg-stone-900 text-white hover:bg-stone-800 shadow-sm",
+                      (!value.trim() && !uploadedImage) || disabled
+                        ? "opacity-40 cursor-not-allowed grayscale"
+                        : "cursor-pointer hover:scale-105 active:scale-95",
+                    )}
+                    aria-label="Send message"
+                  >
+                    <ArrowRight className="w-3.5 h-3.5 text-white" strokeWidth={2.5} />
+                  </button>
+                </div>
               )}
             </div>
           </div>

@@ -9,7 +9,17 @@ from sgit.parsers.tree_sitter_parser import (
     detect_language,
     list_supported_languages,
     parse_file_tree_sitter,
+    _get_language,
 )
+
+
+def _is_lang_available(lang_id: str) -> bool:
+    try:
+        _get_language(lang_id)
+        return True
+    except (ValueError, ImportError):
+        return False
+
 
 JS_CODE = """\
 import { useState } from 'react';
@@ -214,6 +224,7 @@ class TestParseTypeScript(unittest.TestCase):
         self.assertIn("getUser", names)
 
 
+@unittest.skipUnless(_is_lang_available("go"), "tree-sitter-go not available")
 class TestParseGo(unittest.TestCase):
     def test_parses_function(self) -> None:
         snap = parse_file_tree_sitter("main.go", source=GO_CODE)
@@ -232,6 +243,7 @@ class TestParseGo(unittest.TestCase):
         self.assertTrue(len(methods) >= 1)
 
 
+@unittest.skipUnless(_is_lang_available("rust"), "tree-sitter-rust not available")
 class TestParseRust(unittest.TestCase):
     def test_parses_function(self) -> None:
         snap = parse_file_tree_sitter("lib.rs", source=RUST_CODE)
@@ -251,6 +263,7 @@ class TestParseRust(unittest.TestCase):
         self.assertEqual(len(impls), 1)
 
 
+@unittest.skipUnless(_is_lang_available("java"), "tree-sitter-java not available")
 class TestParseJava(unittest.TestCase):
     def test_parses_class(self) -> None:
         snap = parse_file_tree_sitter("App.java", source=JAVA_CODE)
@@ -267,6 +280,7 @@ class TestParseJava(unittest.TestCase):
         self.assertIn("subtract", method_names)
 
 
+@unittest.skipUnless(_is_lang_available("c"), "tree-sitter-c not available")
 class TestParseC(unittest.TestCase):
     def test_parses_function(self) -> None:
         snap = parse_file_tree_sitter("main.c", source=C_CODE)
@@ -279,6 +293,7 @@ class TestParseC(unittest.TestCase):
         self.assertTrue(len(structs) >= 1)
 
 
+@unittest.skipUnless(_is_lang_available("cpp"), "tree-sitter-cpp not available")
 class TestParseCpp(unittest.TestCase):
     def test_parses_namespace(self) -> None:
         snap = parse_file_tree_sitter("main.cpp", source=CPP_CODE)

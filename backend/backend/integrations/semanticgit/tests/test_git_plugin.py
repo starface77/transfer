@@ -26,13 +26,17 @@ class TestInstallGitSubcommands(unittest.TestCase):
     def test_scripts_are_executable(self) -> None:
         import os
         import stat
+        import sys
 
         with tempfile.TemporaryDirectory() as tmp:
             install_git_subcommands(bin_dir=tmp)
             for name in ("git-semantic-diff", "git-semantic-merge", "git-semantic-log"):
                 script = Path(tmp) / name
-                mode = os.stat(script).st_mode
-                self.assertTrue(mode & stat.S_IEXEC)
+                if sys.platform == "win32":
+                    self.assertTrue(script.exists())
+                else:
+                    mode = os.stat(script).st_mode
+                    self.assertTrue(mode & stat.S_IEXEC)
 
     def test_script_contents(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

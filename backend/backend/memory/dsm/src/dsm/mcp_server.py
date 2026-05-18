@@ -15,8 +15,16 @@ JSONRPC_VERSION = "2.0"
 class DsmMcpServer:
     """Minimal stdio MCP server exposing DSM as external model memory."""
 
-    def __init__(self, memory: DynamicSegmentedMemory):
+    def __init__(self, memory: DynamicSegmentedMemory, rld: Any | None = None):
         self.memory = memory
+        if rld is not None:
+            self.rld = rld
+        else:
+            try:
+                from rld import RecursiveLatentDNA
+                self.rld = RecursiveLatentDNA(memory.storage.path.with_name("rld_genes.json"))
+            except ImportError:
+                self.rld = None
 
     def serve(self) -> None:
         for line in sys.stdin:
@@ -50,6 +58,15 @@ class DsmMcpServer:
             return {"jsonrpc": JSONRPC_VERSION, "id": request_id, "result": result}
         except Exception as exc:
             return error_response(request_id, -32000, str(exc))
+
+    def _ensure_rld(self) -> Any:
+        if self.rld is None:
+            try:
+                from rld import RecursiveLatentDNA
+                self.rld = RecursiveLatentDNA(self.memory.storage.path.with_name("rld_genes.json"))
+            except ImportError:
+                raise ImportError("rld package is not available in the current environment")
+        return self.rld
 
     def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if name == "dsm_write":
@@ -94,6 +111,56 @@ class DsmMcpServer:
             return text_result(report)
         if name == "dsm_graph":
             return text_result(graph_data(self.memory))
+        if name == "rld_observe":
+            rld_instance = self._ensure_rld()
+            trajectory = rld_instance.observe(
+                str(arguments["task"]),
+                states=[str(item) for item in arguments.get("states", [])],
+                actions=[str(item) for item in arguments.get("actions", [])],
+                final_answer=str(arguments.get("final_answer", "")),
+                success=bool(arguments.get("success", True)),
+                utility=float(arguments.get("utility", 0.7)),
+                tools_used=[str(item) for item in arguments.get("tools_used", [])],
+                metadata=dict(arguments.get("metadata", {})),
+            )
+            rld_instance.save()
+            return text_result({"trajectory_id": trajectory.id, **rld_instance.stats()})
+        if name == "rld_activate":
+            rld_instance = self._ensure_rld()
+            context = rld_instance.active_context(
+                str(arguments["query"]),
+                threshold=optional_float(arguments.get("threshold")),
+                top_k=optional_int(arguments.get("top_k")),
+            )
+            return text_result(
+                {
+                    "gene_ids": context.gene_ids,
+                    "context": context.context_text,
+                    "activated": [
+                        {
+                            "id": item.gene.id,
+                            "probability": item.probability,
+                            "weight": item.weight,
+                            "reasons": item.reasons,
+                        }
+                        for item in context.activated
+                    ],
+                }
+            )
+        if name == "rld_consolidate":
+            rld_instance = self._ensure_rld()
+            report = rld_instance.consolidate(
+                min_value=float(arguments.get("min_value", 0.18)),
+                merge_similarity=float(arguments.get("merge_similarity", 0.74)),
+                stabilize_reuse=int(arguments.get("stabilize_reuse", 3)),
+            )
+            rld_instance.save()
+            return text_result(report.to_dict())
+        if name == "rld_schema":
+            rld_instance = self._ensure_rld()
+            from rld import GENE_SCHEMA
+
+            return text_result(GENE_SCHEMA)
         raise ValueError(f"Unknown tool: {name}")
 
 
@@ -154,6 +221,54 @@ def tools_schema() -> list[dict[str, Any]]:
             "description": "Return graph visualization data for DSM memory.",
             "inputSchema": {"type": "object", "properties": {}},
         },
+        {
+            "name": "rld_observe",
+            "description": "Convert a reasoning trajectory into an RLD reasoning gene.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "task": {"type": "string"},
+                    "states": {"type": "array", "items": {"type": "string"}},
+                    "actions": {"type": "array", "items": {"type": "string"}},
+                    "final_answer": {"type": "string"},
+                    "success": {"type": "boolean"},
+                    "utility": {"type": "number"},
+                    "tools_used": {"type": "array", "items": {"type": "string"}},
+                    "metadata": {"type": "object"},
+                },
+                "required": ["task"],
+            },
+        },
+        {
+            "name": "rld_activate",
+            "description": "Activate sparse Top-k RLD genes for the current query.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "top_k": {"type": "integer"},
+                    "threshold": {"type": "number"},
+                },
+                "required": ["query"],
+            },
+        },
+        {
+            "name": "rld_consolidate",
+            "description": "Run the RLD sleep phase: prune, merge and stabilize genes.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "min_value": {"type": "number"},
+                    "merge_similarity": {"type": "number"},
+                    "stabilize_reuse": {"type": "integer"},
+                },
+            },
+        },
+        {
+            "name": "rld_schema",
+            "description": "Return the formal JSON schema for RLD reasoning genes.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
     ]
 
 
@@ -170,6 +285,18 @@ def text_result(payload: Any) -> dict[str, Any]:
 
 def error_response(request_id: Any, code: int, message: str) -> dict[str, Any]:
     return {"jsonrpc": JSONRPC_VERSION, "id": request_id, "error": {"code": code, "message": message}}
+
+
+def optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    return float(value)
+
+
+def optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    return int(value)
 
 
 def main() -> None:

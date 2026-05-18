@@ -17,7 +17,7 @@ export async function POST(req: Request) {
       })
     }
 
-    const selectedModel = model || "google/gemini-2.0-flash-001"
+    const selectedModel = model || "google/gemini-3.1-pro"
 
     const lastIndex = messages.length - 1
     const transformedMessages = messages.map(

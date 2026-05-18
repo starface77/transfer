@@ -14,11 +14,12 @@ interface MessageListProps {
   error: string | null
   onRetry: () => void
   isLoaded: boolean // Added isLoaded prop to know when localStorage is loaded
+  onOpenDiff?: (filename: string) => void
 }
 
 const LAUNCH_SOUND_URL = "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/launch-SUi0itAGHr1wtvdDYYG5bzFLsIYHtP.mp3"
 
-export function MessageList({ messages, isStreaming, error, onRetry, isLoaded }: MessageListProps) {
+export function MessageList({ messages, isStreaming, error, onRetry, isLoaded, onOpenDiff }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [autoScroll, setAutoScroll] = useState(true)
@@ -117,7 +118,7 @@ export function MessageList({ messages, isStreaming, error, onRetry, isLoaded }:
     isStreaming &&
     (messages.length === 0 ||
       lastMessage?.role === "user" ||
-      (lastMessage?.role === "assistant" && lastMessage?.content === ""))
+      (lastMessage?.role === "assistant" && lastMessage?.content === "" && (!lastMessage.toolSteps || lastMessage.toolSteps.length === 0)))
 
   if (!isLoaded) {
     return (
@@ -154,8 +155,9 @@ export function MessageList({ messages, isStreaming, error, onRetry, isLoaded }:
       {/* Messages */}
       {messages
         .filter((message) => {
-          // Hide empty assistant messages during streaming - they'll be shown as typing indicator instead
-          if (isStreaming && message.role === "assistant" && message === lastMessage && message.content === "") {
+          // Hide empty assistant messages during streaming only if they don't have toolSteps.
+          // If they have toolSteps, show them immediately so the timeline is visible!
+          if (isStreaming && message.role === "assistant" && message === lastMessage && message.content === "" && (!message.toolSteps || message.toolSteps.length === 0)) {
             return false
           }
           return true
@@ -165,6 +167,7 @@ export function MessageList({ messages, isStreaming, error, onRetry, isLoaded }:
             key={message.id}
             message={message}
             isStreaming={isStreaming && message.role === "assistant" && message === lastMessage}
+            onOpenDiff={onOpenDiff}
           />
         ))}
 

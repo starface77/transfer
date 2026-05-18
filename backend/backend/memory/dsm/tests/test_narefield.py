@@ -45,7 +45,7 @@ def test_adapter_hooks_layer_and_recovers_reasoning_path() -> None:
         field.query_bridge.weight.zero_()
         field.query_bridge.weight[0, 0] = 1.0
         field.attractor_bridge.weight.zero_()
-        field.attractor_bridge.weight[1, 0] = 2.0
+        field.attractor_bridge.weight[1, 0] = 2.2
         field.gate.fill_(1.0)
 
     gene = [0.0] * memory.embedding_model.dim

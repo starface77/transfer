@@ -217,17 +217,43 @@ export function MarkdownRenderer({ content, className, isStreaming = false }: Ma
     const language = firstNewline > 0 ? codeContent.slice(0, firstNewline).trim() : ""
     const code = firstNewline > 0 ? codeContent.slice(firstNewline + 1) : codeContent
 
+    const isDiff = language.toLowerCase() === "diff"
+
     return (
       <pre
         key={partIndex}
-        className="my-2 p-3 bg-stone-900 text-stone-100 rounded-lg overflow-x-auto text-sm font-mono"
-        style={{
-          boxShadow:
-            "rgba(14, 63, 126, 0.04) 0px 0px 0px 1px, rgba(42, 51, 69, 0.04) 0px 1px 1px -0.5px, rgba(42, 51, 70, 0.04) 0px 3px 3px -1.5px, rgba(42, 51, 70, 0.04) 0px 6px 6px -3px, rgba(14, 63, 126, 0.04) 0px 12px 12px -6px, rgba(14, 63, 126, 0.04) 0px 24px 24px -12px",
-        }}
+        className="my-3 p-4 bg-stone-50 border border-stone-200/60 rounded-2xl overflow-x-auto text-[13px] font-mono shadow-[0_1px_3px_rgba(0,0,0,0.01)] text-stone-600 leading-relaxed"
       >
-        {language && <span className="text-xs text-stone-400 block mb-2">{language}</span>}
-        <code>{code}</code>
+        {language && (
+          <span className="text-[11px] font-medium text-stone-400 font-sans block mb-2.5">
+            {language === "diff" ? "Diff Output" : language}
+          </span>
+        )}
+        <code>
+          {isDiff ? (
+            code.split("\n").map((line, i) => {
+              const isAdded = line.startsWith("+")
+              const isRemoved = line.startsWith("-")
+              const isHeader = line.startsWith("@@") || line.startsWith("diff")
+
+              return (
+                <div
+                  key={i}
+                  className={cn(
+                    "px-2 py-0.5 rounded my-0.5 font-mono",
+                    isAdded && "text-emerald-700 bg-emerald-50/70 font-medium",
+                    isRemoved && "text-red-600 bg-red-50/45 line-through decoration-red-200",
+                    isHeader && "text-blue-500 font-semibold bg-blue-50/30"
+                  )}
+                >
+                  {line}
+                </div>
+              )
+            })
+          ) : (
+            code
+          )}
+        </code>
       </pre>
     )
   }

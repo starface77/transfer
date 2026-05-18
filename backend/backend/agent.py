@@ -19,6 +19,7 @@ from tools import (
     summarize_workspace,
     search_web,
     fetch_url,
+    run_terminal_command,
 )
 
 PHASES = ["Observe", "Recall", "Reason", "Stabilize", "Commit"]
@@ -36,6 +37,7 @@ class AgentRunState:
     last_error: str = ""
     final_diff: str = ""
     changes_made: bool = False
+    last_rationale: str = ""
 
 
 class SharrowkinAgent:
@@ -54,6 +56,30 @@ class SharrowkinAgent:
         )
         memory = MemoryBridge(workspace)
         yield self._status("running")
+
+        # Intent Routing: intercept conversational messages early
+        try:
+            intent = await asyncio.to_thread(self.gemini.classify_intent, task)
+            if intent.get("is_conversational"):
+                response = intent.get("response")
+                if not response:
+                    # Heuristic matched but no LLM response yet — generate one
+                    try:
+                        response = await asyncio.to_thread(
+                            self.gemini.generate_text,
+                            task,
+                            "You are Sharrowkin, a friendly AI coding assistant. "
+                            "Respond naturally and helpfully to the user's message. "
+                            "Keep it concise and friendly. Answer in the same language the user writes in."
+                        )
+                    except Exception:
+                        response = "Привет! Я Sharrowkin — автономный агент-разработчик. Чем могу помочь?"
+                yield {"type": "content", "content": response}
+                yield self._status("done")
+                return
+        except Exception as exc:
+            print(f"[AGENT] Intent classification error: {exc}")
+
         yield self._log("system", "Sharrowkin cognitive cycle started.")
 
         try:
@@ -80,9 +106,13 @@ class SharrowkinAgent:
             if success:
                 async for event in self._commit(state, memory):
                     yield event
+                if state.last_rationale:
+                    yield {"type": "content", "content": state.last_rationale}
                 yield self._status("done")
                 yield self._log("success", "Task stabilized and stored in local memory.")
             else:
+                if state.last_error:
+                    yield {"type": "content", "content": f"⚠️ **Self-healing loop reached the iteration limit.**\n\nLast error:\n```log\n{state.last_error}\n```"}
                 yield self._status("error")
                 yield self._log("error", "Self-healing loop reached the iteration limit.")
         except GeminiConfigurationError as exc:
@@ -139,14 +169,42 @@ class SharrowkinAgent:
             memory_context=state.memory_context,
             previous_error=state.last_error,
         )
+        state.last_rationale = generated.rationale
+
+        # 1. Task Decomposition
+        if generated.subtasks:
+            yield self._log("info", "Plan decomposed into subtasks:\n" + "\n".join(f" - {t}" for t in generated.subtasks))
+            state.actions.append(f"Decomposed task into {len(generated.subtasks)} subtasks")
+
+        # 2. Tool Router: Run Terminal Commands
+        command_failed = False
+        if generated.commands:
+            for command in generated.commands:
+                yield self._log("info", f"Running command: {command}")
+                cmd_result = await asyncio.to_thread(run_terminal_command, state.workspace, command)
+                state.actions.append(f"Executed: {command} (code {cmd_result.exit_code})")
+                state.tools_used.append("terminal")
+                if cmd_result.success:
+                    yield self._log("success", f"Command completed successfully:\n{cmd_result.output[-4000:]}")
+                else:
+                    command_failed = True
+                    state.last_error = f"Command '{command}' failed with exit code {cmd_result.exit_code}:\n{cmd_result.output[-4000:]}"
+                    yield self._log("error", state.last_error)
+
+        # If there are no files to change
         if not generated.files:
             state.states.append(generated.rationale)
-            state.actions.append("Answered without file modifications.")
-            state.tools_used.append("gemini-rest")
-            yield self._log("success", generated.rationale or "Task answered without code changes.")
+            if not generated.commands:
+                state.actions.append("Answered without file modifications.")
+                state.tools_used.append("gemini-rest")
+                yield self._log("success", generated.rationale or "Task answered without code changes.")
+            else:
+                state.changes_made = True  # We ran terminal commands, so state did change
+                yield self._log("success", generated.rationale or "Commands executed successfully.")
             yield self._phase("Reason", "done")
             return
 
+        # 3. Multi-file Reasoning: Apply file edits
         changes = [ProposedFileChange(path=path, content=content) for path, content in generated.files.items()]
         patch = await asyncio.to_thread(apply_changes, state.workspace, changes)
         state.final_diff = patch.diff or await asyncio.to_thread(git_diff, state.workspace)
@@ -156,7 +214,11 @@ class SharrowkinAgent:
         state.tools_used.append("gemini-rest")
         state.tools_used.append("file-writer")
         yield {"type": "diff", "diff": state.final_diff, "files": patch.changed_files}
-        yield self._log("success", generated.rationale or "Patch generated and applied.")
+        
+        if command_failed:
+            yield self._log("error", "Patch applied, but some terminal commands failed.")
+        else:
+            yield self._log("success", generated.rationale or "Patch generated and applied.")
         yield self._phase("Reason", "done")
 
     async def _stabilize(
@@ -203,10 +265,11 @@ class SharrowkinAgent:
         yield self._phase("Commit", "done")
 
     def _phase(self, name: str, status: str) -> dict[str, object]:
-        return {"type": "phase", "phase": name, "status": status}
+        return {"type": "phase_change", "phase": name.lower(), "status": status}
 
     def _log(self, level: str, message: str) -> dict[str, object]:
         return {"type": "log", "level": level, "message": message}
 
     def _status(self, status: str) -> dict[str, object]:
         return {"type": "status", "status": status}
+

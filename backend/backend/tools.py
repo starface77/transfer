@@ -337,3 +337,36 @@ def fetch_url(url: str) -> str:
         return text[:10000]
     except Exception as e:
         return f"Failed to fetch URL: {str(e)}"
+
+
+def run_terminal_command(workspace: Path, command: str, timeout_seconds: int = 120) -> TestResult:
+    """Run a terminal command (git, npm, pip, etc.) within the workspace."""
+    try:
+        result = subprocess.run(
+            command,
+            cwd=workspace,
+            shell=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=timeout_seconds,
+            check=False,
+        )
+        return TestResult(
+            success=result.returncode == 0,
+            exit_code=result.returncode,
+            output=result.stdout or "Command completed with no output."
+        )
+    except subprocess.TimeoutExpired:
+        return TestResult(
+            success=False,
+            exit_code=-1,
+            output=f"Command timed out after {timeout_seconds} seconds."
+        )
+    except Exception as e:
+        return TestResult(
+            success=False,
+            exit_code=-2,
+            output=f"Failed to execute command: {str(e)}"
+        )
+

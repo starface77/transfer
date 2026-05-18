@@ -43,7 +43,7 @@ class NAREField(nn.Module):
         self.memory_metadata = [] # To keep track of what's inside
         
         # Symbiotic Rhythm State
-        self.rhythm = 0.5 # Scalar for simplicity in formula
+        self.rhythm = nn.Parameter(torch.tensor(0.5))
         self.rhythm_ref = 0.0 # Rolling baseline
 
     def retrieve(self, hidden_state: torch.Tensor) -> tuple[torch.Tensor, list[RouteResult]]:
@@ -138,7 +138,8 @@ class NAREField(nn.Module):
         if self.memory_bank is not None:
             text_attractor = self.native_retrieve(hidden_state)
         else:
-            text_attractor, _ = self.retrieve(hidden_state)
+            text_attractor, routes = self.retrieve(hidden_state)
+            self.last_routes = routes
             
         # 2. Visual Attractor (If Eye is active)
         if visual_features is not None:

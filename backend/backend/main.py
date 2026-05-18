@@ -4,6 +4,13 @@ from __future__ import annotations
 
 import sys
 import os
+
+# Fix Windows cp1251 stdout encoding — prevents UnicodeEncodeError in print()
+if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 import io
 import time
 import json
@@ -47,6 +54,16 @@ cognitive_agent = FieldScript(dim=256)
 PATCH_DECISION = {"status": "idle", "message": "No patch decision recorded yet."}
 
 
+class SettingsState:
+    workspace_path: str = "c:\\Users\\danik\\Documents\\Field"
+    github_username: str = ""
+    github_token: str = ""
+    connected_repos: list[dict] = []
+
+
+SETTINGS = SettingsState()
+
+
 class StandupRequest(BaseModel):
     workspace_path: str = Field(..., min_length=1)
     hours: float = Field(24, gt=0)
@@ -56,6 +73,99 @@ class StandupRequest(BaseModel):
 class PatchDecisionRequest(BaseModel):
     workspace_path: str = Field(..., min_length=1)
     note: str = ""
+
+
+class ConnectRepoRequest(BaseModel):
+    username: str
+    token: str = ""
+    repo_url: str = ""
+
+
+class SettingsUpdateRequest(BaseModel):
+    workspace_path: str
+
+
+@app.get("/api/settings")
+def get_settings():
+    return {
+        "workspace_path": SETTINGS.workspace_path,
+        "github_username": SETTINGS.github_username,
+        "connected_repos": SETTINGS.connected_repos
+    }
+
+
+@app.post("/api/settings")
+def update_settings(req: SettingsUpdateRequest):
+    if not os.path.exists(req.workspace_path):
+        return {"status": "error", "message": f"Path '{req.workspace_path}' does not exist on disk."}
+    SETTINGS.workspace_path = req.workspace_path
+    return {"status": "success", "workspace_path": SETTINGS.workspace_path}
+
+
+import urllib.parse
+
+@app.post("/api/git/connect")
+def connect_git(req: ConnectRepoRequest):
+    SETTINGS.github_username = req.username
+    if req.token:
+        SETTINGS.github_token = req.token
+        
+    if not req.repo_url:
+        return {
+            "status": "success",
+            "message": f"GitHub connected as {req.username} successfully.",
+            "workspace_path": SETTINGS.workspace_path
+        }
+        
+    try:
+        repo_url = req.repo_url.strip()
+        if not repo_url.startswith("http://") and not repo_url.startswith("https://") and not repo_url.startswith("git@"):
+            # e.g., "starface77/NareCLI"
+            repo_url = f"https://github.com/{repo_url}.git"
+            
+        parts = repo_url.rstrip("/").split("/")
+        repo_name = parts[-1]
+        if repo_name.endswith(".git"):
+            repo_name = repo_name[:-4]
+            
+        target_dir = Path("c:\\Users\\danik\\Documents\\Field\\projects") / repo_name
+        
+        # Build authenticated URL
+        clone_url = repo_url
+        if req.token:
+            parsed = urllib.parse.urlparse(repo_url)
+            if parsed.scheme == "https" and "github.com" in parsed.netloc:
+                netloc = f"{req.username}:{req.token}@github.com" if req.username else f"{req.token}@github.com"
+                clone_url = parsed._replace(netloc=netloc).geturl()
+                
+        # Run git clone if it doesn't exist
+        if not (target_dir / ".git").exists():
+            target_dir.parent.mkdir(parents=True, exist_ok=True)
+            res = subprocess.run(
+                ["git", "clone", clone_url, str(target_dir)],
+                capture_output=True,
+                text=True
+            )
+            if res.returncode != 0:
+                err = res.stderr
+                if req.token:
+                    err = err.replace(req.token, "********")
+                return {"status": "error", "message": f"Git clone failed: {err}"}
+                
+        SETTINGS.workspace_path = str(target_dir)
+        repo_info = {"name": repo_name, "url": req.repo_url, "path": str(target_dir)}
+        if repo_info not in SETTINGS.connected_repos:
+            SETTINGS.connected_repos.append(repo_info)
+            
+        return {
+            "status": "success",
+            "message": f"Cloned and connected repository '{repo_name}' successfully!",
+            "workspace_path": SETTINGS.workspace_path,
+            "repo": repo_info
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 
 
 class CreateDocRequest(BaseModel):
@@ -205,7 +315,7 @@ import subprocess
 
 @app.get("/api/git/changes")
 def get_git_changes():
-    workspace = "c:\\Users\\danik\\Documents\\Field"
+    workspace = SETTINGS.workspace_path
     try:
         # Run git status --porcelain
         status_res = subprocess.run(
@@ -300,7 +410,7 @@ def get_git_changes():
 
 @app.get("/api/docs")
 def list_docs():
-    workspace = Path("c:\\Users\\danik\\Documents\\Field")
+    workspace = Path(SETTINGS.workspace_path)
     docs_dir = workspace / "modules" / "docs"
     
     doc_list = []
@@ -331,7 +441,7 @@ def list_docs():
 def get_doc_content(filename: str):
     try:
         # Prevent path traversal
-        if "c:\\Users\\danik\\Documents\\Field" not in filename:
+        if SETTINGS.workspace_path not in filename:
             return {"content": "Access denied."}
         
         p = Path(filename)
@@ -346,7 +456,7 @@ def get_doc_content(filename: str):
 @app.post("/api/docs/create")
 def create_doc(request: CreateDocRequest) -> dict[str, object]:
     try:
-        workspace = Path("c:\\Users\\danik\\Documents\\Field")
+        workspace = Path(SETTINGS.workspace_path)
         if request.folder == "Theory & Manifesto":
             target_dir = workspace / "modules" / "docs"
         else:

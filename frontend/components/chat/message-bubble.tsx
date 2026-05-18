@@ -3,13 +3,14 @@
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 import type { Message, ToolStep } from "./chat-shell"
-import { Loader2, CheckCircle2, ChevronRight, ChevronDown, Sparkles, CircleDashed } from "lucide-react"
+import { Loader2, CheckCircle2, ChevronRight, ChevronDown, Sparkles, CircleDashed, FileCode } from "lucide-react"
 import { MarkdownRenderer } from "./markdown-renderer"
 import Image from "next/image"
 
 interface MessageBubbleProps {
   message: Message
   isStreaming?: boolean
+  onOpenDiff?: (filename: string) => void
 }
 
 // Format time for display
@@ -24,7 +25,7 @@ function getStepIcon(status: string) {
   return <CircleDashed strokeWidth={1.5} className="w-3.5 h-3.5 text-stone-200" />
 }
 
-export function MessageBubble({ message, isStreaming = false }: MessageBubbleProps) {
+export function MessageBubble({ message, isStreaming = false, onOpenDiff }: MessageBubbleProps) {
   const isUser = message.role === "user"
   const [expandedSteps, setExpandedSteps] = useState(true)
 
@@ -57,7 +58,7 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
                 ) : (
                   <CheckCircle2 strokeWidth={1.5} className="w-3.5 h-3.5 text-stone-300" />
                 )}
-                <span className="text-[13px] font-medium text-stone-500 tracking-wide">
+                <span className="text-[13px] font-medium text-stone-500 tracking-wide font-sans">
                   {isWorking ? "Agent thinking" : "Task completed"}
                 </span>
                 {expandedSteps ? (
@@ -88,7 +89,7 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
                         <div className="flex flex-col flex-1 pb-1">
                           <div className="flex items-center gap-2">
                             <span className={cn(
-                              "text-[13px] font-light tracking-wide transition-colors",
+                              "text-[13px] font-normal tracking-wide transition-colors font-sans",
                               step.status === "running" ? "text-stone-800" : "text-stone-500"
                             )}>
                               {step.name}
@@ -96,12 +97,12 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
                             
                             {/* Barely-there Badges */}
                             {step.status === "running" && (
-                              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-stone-200/40 text-stone-500">
+                              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-stone-200/40 text-stone-500 font-sans">
                                 working
                               </span>
                             )}
                             {step.status === "done" && (
-                              <span className="text-[10px] text-stone-300 ml-auto font-mono">
+                              <span className="text-[11px] text-stone-400 ml-auto font-normal font-sans">
                                 {formatTime(new Date())}
                               </span>
                             )}
@@ -109,7 +110,7 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
                           
                           {/* Description box - naked text instead of bg-box */}
                           {step.description && (
-                            <div className="mt-1 text-[12px] text-stone-400/80 font-light leading-relaxed">
+                            <div className="mt-1 text-[12px] text-stone-400/80 font-normal leading-relaxed font-sans">
                               {step.description}
                             </div>
                           )}
@@ -124,8 +125,29 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
 
           {/* Main Agent Text Content */}
           {message.content && (
-            <div className="text-[14px] text-stone-800 font-light leading-relaxed max-w-full overflow-x-auto">
+            <div className="text-[14px] text-stone-800 font-normal leading-relaxed max-w-full overflow-x-auto">
               <MarkdownRenderer content={message.content} isStreaming={isStreaming} />
+            </div>
+          )}
+
+          {/* Clean Apple Interactive Diff Action Card */}
+          {message.content && message.content.includes("```diff") && onOpenDiff && (
+            <div className="flex items-center justify-between p-4 bg-stone-50 border border-stone-200/60 rounded-2xl max-w-[500px] shadow-[0_1px_4px_rgba(0,0,0,0.01)] animate-in fade-in slide-in-from-bottom-2 duration-500">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-white border border-stone-200/60 flex items-center justify-center text-stone-400 shadow-[0_1px_3px_rgba(0,0,0,0.01)]">
+                  <FileCode size={16} strokeWidth={1.5} className="text-stone-500" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[13px] text-stone-800 font-medium font-sans">components/app.tsx</span>
+                  <span className="text-[11px] text-stone-400 font-normal font-sans mt-0.5">Proposed changes from workspace planner</span>
+                </div>
+              </div>
+              <button
+                onClick={() => onOpenDiff("components/app.tsx")}
+                className="px-3.5 py-1.5 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-[12.5px] font-normal transition-colors shadow-sm font-sans shrink-0 ml-4"
+              >
+                View Split Diff
+              </button>
             </div>
           )}
 
@@ -147,7 +169,7 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
     <div className="flex w-full justify-end max-w-3xl mx-auto py-4 user-message-enter">
       <div className="flex flex-col items-end gap-1.5 max-w-[85%] md:max-w-[75%]">
         <div
-          className="rounded-[20px] rounded-br-[6px] bg-[#f4f4f5] text-stone-800 font-light px-4 py-3"
+          className="rounded-[20px] rounded-br-[6px] bg-[#f4f4f5] text-stone-800 font-normal px-4 py-3"
         >
           <div className="flex flex-col gap-2">
             {message.imageData && (

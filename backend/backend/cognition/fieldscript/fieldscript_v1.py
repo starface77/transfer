@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Optional, Any
 
 # Импортируем наше ядро
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "modules" / "dsm" / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "modules" / "nare_field" / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[5] / "modules" / "dsm" / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[5] / "modules" / "nare_field" / "src"))
 
 from narefield.core.model import NAREFieldModel, NAREConfig
 from dsm.memory import DynamicSegmentedMemory

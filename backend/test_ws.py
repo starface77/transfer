@@ -1,0 +1,45 @@
+"""Test WebSocket intent routing end-to-end."""
+import asyncio
+import json
+import sys
+
+# Force utf-8 output
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
+async def test():
+    try:
+        import websockets
+    except ImportError:
+        print("Installing websockets...")
+        import subprocess
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "websockets", "-q"])
+        import websockets
+
+    uri = "ws://127.0.0.1:8000/ws/agent"
+    print(f"Connecting to {uri}...")
+    
+    async with websockets.connect(uri) as ws:
+        payload = {"task": "ку", "workspace_path": r"c:\Users\danik\Documents\Field"}
+        print(f"Sending: {json.dumps(payload, ensure_ascii=False)}")
+        await ws.send(json.dumps(payload))
+        
+        while True:
+            try:
+                msg = await asyncio.wait_for(ws.recv(), timeout=30)
+                data = json.loads(msg)
+                print(f"  RECV: {json.dumps(data, ensure_ascii=False, indent=2)}")
+                
+                if data.get("type") == "status" and data.get("status") in ("done", "error"):
+                    print("Stream ended via status event.")
+                    break
+                if data.get("type") in ("success", "error"):
+                    print("Stream ended via legacy event.")
+                    break
+            except asyncio.TimeoutError:
+                print("TIMEOUT after 30s!")
+                break
+            except Exception as e:
+                print(f"Error: {e}")
+                break
+
+asyncio.run(test())
