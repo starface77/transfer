@@ -1,0 +1,126 @@
+{
+  "path": "C:\\Users\\danik\\Documents\\Field\\modules\\lazystandup\\src\\lazystandup\\reporter.py",
+  "nodes": [
+    {
+      "kind": "import",
+      "name": "annotations",
+      "signature": "from __future__ import annotations",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 3,
+      "line_end": 3,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "import",
+      "name": "os",
+      "signature": "import os",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 5,
+      "line_end": 5,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "import",
+      "name": "Optional",
+      "signature": "from typing import Optional",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 6,
+      "line_end": 6,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "global_var",
+      "name": "SYSTEM_PROMPT",
+      "signature": "",
+      "docstring": "",
+      "body_hash": "5648e8e8deb1c7b6",
+      "line_start": 8,
+      "line_end": 18,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "function",
+      "name": "_build_user_prompt",
+      "signature": "(change_descriptions: Subscript(value=Name(id='list', ctx=Load()), slice=Name(id='str', ctx=Load()), ctx=Load())) -> Name(id='str', ctx=Load())",
+      "docstring": "",
+      "body_hash": "9e12960f27c55069",
+      "line_start": 21,
+      "line_end": 23,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "function",
+      "name": "generate_report_ollama",
+      "signature": "(change_descriptions: Subscript(value=Name(id='list', ctx=Load()), slice=Name(id='str', ctx=Load()), ctx=Load()), model: Name(id='str', ctx=Load())=..., base_url: Name(id='str', ctx=Load())=..., timeout: Name(id='int', ctx=Load())=...) -> Name(id='str', ctx=Load())",
+      "docstring": "Generate standup report using a local Ollama instance.\n\nArgs:\n    change_descriptions: List of human-readable AST change strings.\n    model: Ollama model name.\n    base_url: Ollama API base URL.\n    timeout: Request timeout in seconds.\n\nReturns:\n    Generated standup report text.",
+      "body_hash": "add68281ec131fbc",
+      "line_start": 26,
+      "line_end": 70,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "function",
+      "name": "generate_report_openai",
+      "signature": "(change_descriptions: Subscript(value=Name(id='list', ctx=Load()), slice=Name(id='str', ctx=Load()), ctx=Load()), model: Name(id='str', ctx=Load())=..., api_key: Subscript(value=Name(id='Optional', ctx=Load()), slice=Name(id='str', ctx=Load()), ctx=Load())=..., timeout: Name(id='int', ctx=Load())=...) -> Name(id='str', ctx=Load())",
+      "docstring": "Generate standup report using OpenAI API.\n\nArgs:\n    change_descriptions: List of human-readable AST change strings.\n    model: OpenAI model name.\n    api_key: OpenAI API key (falls back to OPENAI_API_KEY env var).\n    timeout: Request timeout in seconds.\n\nReturns:\n    Generated standup report text.",
+      "body_hash": "20397d0c39447e96",
+      "line_start": 73,
+      "line_end": 124,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "function",
+      "name": "generate_report_gemini",
+      "signature": "(change_descriptions: Subscript(value=Name(id='list', ctx=Load()), slice=Name(id='str', ctx=Load()), ctx=Load()), model: Name(id='str', ctx=Load())=..., api_key: Subscript(value=Name(id='Optional', ctx=Load()), slice=Name(id='str', ctx=Load()), ctx=Load())=..., timeout: Name(id='int', ctx=Load())=...) -> Name(id='str', ctx=Load())",
+      "docstring": "Generate standup report using Google Gemini API.\n\nArgs:\n    change_descriptions: List of human-readable AST change strings.\n    model: Gemini model name.\n    api_key: Gemini API key (falls back to GEMINI_API_KEY env var).\n    timeout: Request timeout in seconds.\n\nReturns:\n    Generated standup report text.",
+      "body_hash": "043fc7a8077d23cd",
+      "line_start": 127,
+      "line_end": 170,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "function",
+      "name": "generate_report",
+      "signature": "(change_descriptions: Subscript(value=Name(id='list', ctx=Load()), slice=Name(id='str', ctx=Load()), ctx=Load()), engine: Name(id='str', ctx=Load())=..., **kwargs) -> Name(id='str', ctx=Load())",
+      "docstring": "Generate standup report using the specified engine.\n\nArgs:\n    change_descriptions: List of human-readable AST change strings.\n    engine: \"ollama\" or \"openai\".\n    **kwargs: Passed to the engine-specific function.\n\nReturns:\n    Generated standup report text.",
+      "body_hash": "93e41ce5dcc87654",
+      "line_start": 173,
+      "line_end": 198,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "function",
+      "name": "generate_report_offline",
+      "signature": "(change_descriptions: Subscript(value=Name(id='list', ctx=Load()), slice=Name(id='str', ctx=Load()), ctx=Load())) -> Name(id='str', ctx=Load())",
+      "docstring": "Generate a simple standup report without any LLM (offline fallback).\n\nThis creates a clean bulleted list from raw AST change descriptions.\nUseful when no LLM is available.",
+      "body_hash": "5128121ce8114f20",
+      "line_start": 201,
+      "line_end": 215,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    }
+  ],
+  "raw_hash": "79ee96fd5c826c0f"
+}

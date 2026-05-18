@@ -1,0 +1,362 @@
+{
+  "path": "C:\\Users\\danik\\Documents\\Field\\modules\\lazystandup\\src\\lazystandup\\harvester.py",
+  "nodes": [
+    {
+      "kind": "import",
+      "name": "annotations",
+      "signature": "from __future__ import annotations",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 3,
+      "line_end": 3,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "import",
+      "name": "datetime",
+      "signature": "import datetime",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 5,
+      "line_end": 5,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "import",
+      "name": "dataclass",
+      "signature": "from dataclasses import dataclass",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 6,
+      "line_end": 6,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "import",
+      "name": "field",
+      "signature": "from dataclasses import field",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 6,
+      "line_end": 6,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "import",
+      "name": "Path",
+      "signature": "from pathlib import Path",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 7,
+      "line_end": 7,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "import",
+      "name": "Optional",
+      "signature": "from typing import Optional",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 8,
+      "line_end": 8,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "import",
+      "name": "compute_delta",
+      "signature": "from sgit.core.diff_engine import compute_delta",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 10,
+      "line_end": 10,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "import",
+      "name": "Repository",
+      "signature": "from sgit.core.storage import Repository",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 11,
+      "line_end": 11,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "import",
+      "name": "FileSnapshot",
+      "signature": "from sgit.models import FileSnapshot",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 12,
+      "line_end": 12,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "import",
+      "name": "SemanticDelta",
+      "signature": "from sgit.models import SemanticDelta",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 12,
+      "line_end": 12,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "class",
+      "name": "ASTChange",
+      "signature": "",
+      "docstring": "A single AST-level change extracted from a commit.",
+      "body_hash": "5502f46543482f21",
+      "line_start": 16,
+      "line_end": 46,
+      "decorators": [
+        "dataclass"
+      ],
+      "parent_name": "",
+      "children": [
+        {
+          "kind": "class_var",
+          "name": "commit_id",
+          "signature": "",
+          "docstring": "",
+          "body_hash": "70bb074f17eda134",
+          "line_start": 19,
+          "line_end": 19,
+          "decorators": [],
+          "parent_name": "ASTChange",
+          "children": []
+        },
+        {
+          "kind": "class_var",
+          "name": "timestamp",
+          "signature": "",
+          "docstring": "",
+          "body_hash": "0bcc57f1fe37999c",
+          "line_start": 20,
+          "line_end": 20,
+          "decorators": [],
+          "parent_name": "ASTChange",
+          "children": []
+        },
+        {
+          "kind": "class_var",
+          "name": "message",
+          "signature": "",
+          "docstring": "",
+          "body_hash": "9474fed3d0142bcc",
+          "line_start": 21,
+          "line_end": 21,
+          "decorators": [],
+          "parent_name": "ASTChange",
+          "children": []
+        },
+        {
+          "kind": "class_var",
+          "name": "file_path",
+          "signature": "",
+          "docstring": "",
+          "body_hash": "a3577907072e8ff3",
+          "line_start": 22,
+          "line_end": 22,
+          "decorators": [],
+          "parent_name": "ASTChange",
+          "children": []
+        },
+        {
+          "kind": "class_var",
+          "name": "change_type",
+          "signature": "",
+          "docstring": "",
+          "body_hash": "5104085fcf96646d",
+          "line_start": 23,
+          "line_end": 23,
+          "decorators": [],
+          "parent_name": "ASTChange",
+          "children": []
+        },
+        {
+          "kind": "class_var",
+          "name": "node_kind",
+          "signature": "",
+          "docstring": "",
+          "body_hash": "9fdf0f043aaaf85b",
+          "line_start": 24,
+          "line_end": 24,
+          "decorators": [],
+          "parent_name": "ASTChange",
+          "children": []
+        },
+        {
+          "kind": "class_var",
+          "name": "node_name",
+          "signature": "",
+          "docstring": "",
+          "body_hash": "0dda0fb18d0c24b0",
+          "line_start": 25,
+          "line_end": 25,
+          "decorators": [],
+          "parent_name": "ASTChange",
+          "children": []
+        },
+        {
+          "kind": "class_var",
+          "name": "signature",
+          "signature": "",
+          "docstring": "",
+          "body_hash": "60d13c3325540236",
+          "line_start": 26,
+          "line_end": 26,
+          "decorators": [],
+          "parent_name": "ASTChange",
+          "children": []
+        },
+        {
+          "kind": "class_var",
+          "name": "old_name",
+          "signature": "",
+          "docstring": "",
+          "body_hash": "deb5dd7ff549c583",
+          "line_start": 27,
+          "line_end": 27,
+          "decorators": [],
+          "parent_name": "ASTChange",
+          "children": []
+        },
+        {
+          "kind": "class_var",
+          "name": "details",
+          "signature": "",
+          "docstring": "",
+          "body_hash": "4e24ef868286bc67",
+          "line_start": 28,
+          "line_end": 28,
+          "decorators": [],
+          "parent_name": "ASTChange",
+          "children": []
+        },
+        {
+          "kind": "method",
+          "name": "describe",
+          "signature": "(self) -> Name(id='str', ctx=Load())",
+          "docstring": "Human-readable one-liner for this change.",
+          "body_hash": "350791d72501fdb5",
+          "line_start": 30,
+          "line_end": 46,
+          "decorators": [],
+          "parent_name": "ASTChange",
+          "children": []
+        }
+      ]
+    },
+    {
+      "kind": "class",
+      "name": "HarvestResult",
+      "signature": "",
+      "docstring": "Result of harvesting AST changes from history.",
+      "body_hash": "8b07c746d7e85ca2",
+      "line_start": 50,
+      "line_end": 59,
+      "decorators": [
+        "dataclass"
+      ],
+      "parent_name": "",
+      "children": [
+        {
+          "kind": "class_var",
+          "name": "changes",
+          "signature": "",
+          "docstring": "",
+          "body_hash": "713fc0ad0d7e5478",
+          "line_start": 53,
+          "line_end": 53,
+          "decorators": [],
+          "parent_name": "HarvestResult",
+          "children": []
+        },
+        {
+          "kind": "class_var",
+          "name": "commits_scanned",
+          "signature": "",
+          "docstring": "",
+          "body_hash": "902ecfbc7e21c13c",
+          "line_start": 54,
+          "line_end": 54,
+          "decorators": [],
+          "parent_name": "HarvestResult",
+          "children": []
+        },
+        {
+          "kind": "class_var",
+          "name": "time_range_hours",
+          "signature": "",
+          "docstring": "",
+          "body_hash": "421ef503d98db1a3",
+          "line_start": 55,
+          "line_end": 55,
+          "decorators": [],
+          "parent_name": "HarvestResult",
+          "children": []
+        },
+        {
+          "kind": "method",
+          "name": "descriptions",
+          "signature": "(self) -> Subscript(value=Name(id='list', ctx=Load()), slice=Name(id='str', ctx=Load()), ctx=Load())",
+          "docstring": "",
+          "body_hash": "3e2a2932e5baa50b",
+          "line_start": 58,
+          "line_end": 59,
+          "decorators": [
+            "property"
+          ],
+          "parent_name": "HarvestResult",
+          "children": []
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "_delta_to_changes",
+      "signature": "(delta: Name(id='SemanticDelta', ctx=Load()), commit_id: Name(id='str', ctx=Load()), timestamp: Name(id='str', ctx=Load()), message: Name(id='str', ctx=Load())) -> Subscript(value=Name(id='list', ctx=Load()), slice=Name(id='ASTChange', ctx=Load()), ctx=Load())",
+      "docstring": "Convert a SemanticDelta into a list of ASTChange records.",
+      "body_hash": "a5eff2a3f2f03dda",
+      "line_start": 62,
+      "line_end": 149,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "function",
+      "name": "harvest_changes",
+      "signature": "(repo_path: Subscript(value=Name(id='Optional', ctx=Load()), slice=Name(id='str', ctx=Load()), ctx=Load())=..., hours: Name(id='float', ctx=Load())=..., max_commits: Name(id='int', ctx=Load())=...) -> Name(id='HarvestResult', ctx=Load())",
+      "docstring": "Scan s-git history and gather all AST changes from the last N hours.\n\nArgs:\n    repo_path: Path to s-git repo root (auto-detected if None).\n    hours: How many hours of history to scan.\n    max_commits: Max commits to look back.\n\nReturns:\n    HarvestResult with all AST changes found.",
+      "body_hash": "b1736ba9f115c13e",
+      "line_start": 152,
+      "line_end": 225,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    }
+  ],
+  "raw_hash": "ed6fb8f3ed2cd3c7"
+}

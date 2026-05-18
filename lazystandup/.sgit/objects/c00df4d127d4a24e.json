@@ -1,0 +1,135 @@
+{
+  "path": "C:\\Users\\danik\\Documents\\Field\\modules\\lazystandup\\src\\lazystandup\\cli.py",
+  "nodes": [
+    {
+      "kind": "import",
+      "name": "annotations",
+      "signature": "from __future__ import annotations",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 3,
+      "line_end": 3,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "import",
+      "name": "sys",
+      "signature": "import sys",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 5,
+      "line_end": 5,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "import",
+      "name": "click",
+      "signature": "import click",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 12,
+      "line_end": 12,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "import",
+      "name": "Console",
+      "signature": "from rich.console import Console",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 13,
+      "line_end": 13,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "import",
+      "name": "Panel",
+      "signature": "from rich.panel import Panel",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 14,
+      "line_end": 14,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "import",
+      "name": "Markdown",
+      "signature": "from rich.markdown import Markdown",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 15,
+      "line_end": 15,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "import",
+      "name": "Theme",
+      "signature": "from rich.theme import Theme",
+      "docstring": "",
+      "body_hash": "",
+      "line_start": 16,
+      "line_end": 16,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "global_var",
+      "name": "custom_theme",
+      "signature": "",
+      "docstring": "",
+      "body_hash": "4a9b2b1690411f1d",
+      "line_start": 19,
+      "line_end": 26,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "global_var",
+      "name": "console",
+      "signature": "",
+      "docstring": "",
+      "body_hash": "7e9730040cde2128",
+      "line_start": 27,
+      "line_end": 27,
+      "decorators": [],
+      "parent_name": "",
+      "children": []
+    },
+    {
+      "kind": "function",
+      "name": "main",
+      "signature": "(hours: Name(id='float', ctx=Load()), engine: Name(id='str', ctx=Load()), model: BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None)), api_key: BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None)), no_clipboard: Name(id='bool', ctx=Load()), as_json: Name(id='bool', ctx=Load()), repo: BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))) -> Constant(value=None)",
+      "docstring": "Generate your daily standup report from s-git AST commits.\n\nScans s-git commit history, extracts semantic AST changes,\ncompiles them into a professional standup report via LLM,\nand copies the result to your clipboard.",
+      "body_hash": "7a35d28c76e27ea1",
+      "line_start": 52,
+      "line_end": 175,
+      "decorators": [
+        "Attribute(value=Name(id='click', ctx=Load()), attr='command', ctx=Load())(...)",
+        "Attribute(value=Name(id='click', ctx=Load()), attr='option', ctx=Load())(...)",
+        "Attribute(value=Name(id='click', ctx=Load()), attr='option', ctx=Load())(...)",
+        "Attribute(value=Name(id='click', ctx=Load()), attr='option', ctx=Load())(...)",
+        "Attribute(value=Name(id='click', ctx=Load()), attr='option', ctx=Load())(...)",
+        "Attribute(value=Name(id='click', ctx=Load()), attr='option', ctx=Load())(...)",
+        "Attribute(value=Name(id='click', ctx=Load()), attr='option', ctx=Load())(...)",
+        "Attribute(value=Name(id='click', ctx=Load()), attr='option', ctx=Load())(...)"
+      ],
+      "parent_name": "",
+      "children": []
+    }
+  ],
+  "raw_hash": "977fc815daef8f8c"
+}

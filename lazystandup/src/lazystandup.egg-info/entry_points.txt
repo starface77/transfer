@@ -1,0 +1,2 @@
+[console_scripts]
+lazystandup = lazystandup.cli:main

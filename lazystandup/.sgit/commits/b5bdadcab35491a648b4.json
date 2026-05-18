@@ -1,0 +1,25 @@
+{
+  "commit_id": "b5bdadcab35491a648b4",
+  "parent_id": null,
+  "timestamp": "2026-05-17T18:25:26Z",
+  "message": "Initial semantic commit of lazystandup codebase",
+  "branch": "main",
+  "snapshots": {
+    "src\\lazystandup\\__init__.py": {
+      "tree_hash": "4b5e983896abe3a6",
+      "raw_hash": "d0da7b3acb7486d4"
+    },
+    "src\\lazystandup\\cli.py": {
+      "tree_hash": "c00df4d127d4a24e",
+      "raw_hash": "977fc815daef8f8c"
+    },
+    "src\\lazystandup\\harvester.py": {
+      "tree_hash": "5633590666af6035",
+      "raw_hash": "ed6fb8f3ed2cd3c7"
+    },
+    "src\\lazystandup\\reporter.py": {
+      "tree_hash": "1210bc9f413817b1",
+      "raw_hash": "79ee96fd5c826c0f"
+    }
+  }
+}

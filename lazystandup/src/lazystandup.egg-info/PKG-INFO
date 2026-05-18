@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: lazystandup
+Version: 0.1.0
+Summary: Automated, privacy-first developer standup generator from s-git AST modifications.
+License: MIT
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: click>=8.0
+Requires-Dist: requests>=2.25.0
+Requires-Dist: pyperclip>=1.8.0
+Requires-Dist: rich>=13.0.0
