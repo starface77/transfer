@@ -36,15 +36,7 @@ export function AutomationsShell() {
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true)
 
   // Terminal state for RightSidebar
-  const [terminalLines, setTerminalLines] = useState<string[]>([
-    "sharrowkin-core ~ bash",
-    "$ dsm status",
-    "→ MoE vector space connected: stable",
-    "→ 12,408 Memory chunks active",
-    "",
-    "$ dsm logs",
-    "[SUCCESS] Automation dispatcher active.",
-  ])
+  const [terminalLines, setTerminalLines] = useState<string[]>([])
   const [isRunningTask, setIsRunningTask] = useState(false)
   const [currentInput, setCurrentInput] = useState("")
   const [terminalDock, setTerminalDock] = useState<"sidebar" | "bottom">("sidebar")

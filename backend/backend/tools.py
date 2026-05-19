@@ -112,6 +112,37 @@ def iter_source_files(workspace: Path, max_files: int = 160) -> list[Path]:
     return files
 
 
+def read_file(workspace: Path, relative_path: str, max_lines: int = 500) -> str:
+    """Read a file from the workspace and return its content."""
+    target = safe_relative_path(workspace, relative_path)
+    if not target.exists():
+        return f"ERROR: File not found: {relative_path}"
+    if target.stat().st_size > 300_000:
+        return f"ERROR: File too large: {relative_path} ({target.stat().st_size} bytes)"
+    content = target.read_text(encoding="utf-8", errors="replace")
+    lines = content.splitlines()
+    if len(lines) > max_lines:
+        return "\n".join(lines[:max_lines]) + f"\n... [{len(lines) - max_lines} more lines truncated]"
+    return content
+
+
+def list_files(workspace: Path, subdir: str = "") -> str:
+    """List files in a workspace subdirectory."""
+    target = workspace / subdir if subdir else workspace
+    if not target.exists():
+        return f"ERROR: Directory not found: {subdir}"
+    entries = []
+    for item in sorted(target.iterdir()):
+        if item.name in IGNORED_DIRS or item.name.startswith("."):
+            continue
+        prefix = "📁" if item.is_dir() else "📄"
+        size = ""
+        if item.is_file():
+            size = f" ({item.stat().st_size:,} bytes)"
+        entries.append(f"{prefix} {item.name}{size}")
+    return "\n".join(entries) if entries else "(empty directory)"
+
+
 def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
@@ -208,17 +239,20 @@ def scan_workspace(workspace: Path) -> list[FileSummary]:
     return summaries
 
 
-def summarize_workspace(summaries: list[FileSummary], max_files: int = 80) -> str:
+def summarize_workspace(summaries: list[FileSummary], max_files: int = 60) -> str:
     lines: list[str] = []
     for summary in summaries[:max_files]:
         lines.append(f"FILE {summary.path} [{summary.language}]")
         if summary.error:
             lines.append(f"  error: {summary.error}")
         if summary.imports:
-            imports = ", ".join(sorted(set(summary.imports))[:12])
+            imports = ", ".join(sorted(set(summary.imports))[:5])
             lines.append(f"  imports: {imports}")
-        for symbol in summary.symbols[:24]:
-            lines.append(f"  {symbol.kind} {symbol.name}{symbol.signature} @ line {symbol.line}")
+        # Only list top-level or important symbols, max 8 per file, without full signatures to save tokens
+        for symbol in summary.symbols[:8]:
+            # Keep it simple: "class MyClass" or "function my_func"
+            name_only = symbol.name.split('(')[0]
+            lines.append(f"  {symbol.kind} {name_only}")
     if len(summaries) > max_files:
         lines.append(f"... {len(summaries) - max_files} more files omitted")
     return "\n".join(lines)

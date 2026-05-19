@@ -49,18 +49,48 @@ class MemoryBridge:
 
     def recall(self, task: str) -> str:
         if not self.enabled:
-            return self.disabled_reason or "Memory bridge is disabled."
+            return self._fallback_context(task)
         if self.rld is None or self.dsm is None:
-            return "Memory bridge is disabled."
+            return self._fallback_context(task)
         rld_context: RLDContext = self.rld.active_context(task)
         dsm_context: ActiveContext = self.dsm.active_context(task, k=4)
-        return "\n\n".join(
+        combined = "\n\n".join(
             [
                 rld_context.context_text,
                 "DSM ACTIVE CONTEXT",
                 dsm_context.context_text,
             ]
         )
+        # If memory returned nothing useful, supplement with workspace files
+        if "No reasoning genes" in combined and "No active memory" in combined:
+            combined += "\n\n" + self._fallback_context(task)
+        return combined
+
+    def _fallback_context(self, task: str) -> str:
+        """Read key workspace files as fallback when memory is empty."""
+        import os
+        context_parts = ["WORKSPACE FILE CONTEXT (memory is cold — bootstrapping from files)"]
+        # Read README
+        readme = self.workspace / "README.md"
+        if readme.exists():
+            try:
+                text = readme.read_text(encoding="utf-8", errors="replace")[:6000]
+                context_parts.append(f"--- README.md ---\n{text}")
+            except Exception:
+                pass
+        # Read pyproject.toml or package.json
+        for cfg in ("pyproject.toml", "package.json", "setup.py", "Cargo.toml"):
+            cfg_path = self.workspace / cfg
+            if cfg_path.exists():
+                try:
+                    text = cfg_path.read_text(encoding="utf-8", errors="replace")[:3000]
+                    context_parts.append(f"--- {cfg} ---\n{text}")
+                except Exception:
+                    pass
+                break
+        if len(context_parts) == 1:
+            context_parts.append("No README or config files found. Agent will rely on AST scan only.")
+        return "\n\n".join(context_parts)
 
     def learn_project(self, workspace_summary: str) -> None:
         if not self.enabled or self.dsm is None:

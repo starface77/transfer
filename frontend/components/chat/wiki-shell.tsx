@@ -93,21 +93,18 @@ export function WikiShell() {
   const [newDocFolder, setNewDocFolder] = useState("Theory & Manifesto")
   const [newDocContent, setNewDocContent] = useState("")
   const [isSavingDoc, setIsSavingDoc] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
 
   const fetchDocs = useCallback(async () => {
     try {
-      const res = await fetch("${BACKEND_URL}/api/docs")
+      const res = await fetch(`${BACKEND_URL}/api/docs`)
       if (res.ok) {
         const data = await res.json()
         setDocuments(data)
       }
     } catch (err) {
       console.error("Failed to load real markdown docs:", err)
-      // Fallback placeholders
-      setDocuments([
-        { id: "1", title: "Architecture Guidelines", folder: "Theory & Manifesto" },
-        { id: "2", title: "Recursive Latent DNA Specs", folder: "Workspace Root" }
-      ])
+      setDocuments([])
     }
   }, [])
 
@@ -153,6 +150,8 @@ export function WikiShell() {
               <input 
                 type="text" 
                 placeholder="Search wiki..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 pr-4 py-1.5 text-[13px] bg-white border border-stone-200/60 rounded-full w-64 focus:outline-none focus:ring-0 shadow-[0_1px_4px_rgba(0,0,0,0.02)]"
               />
             </div>
@@ -200,7 +199,9 @@ export function WikiShell() {
             <div className="pt-8">
               <h2 className="text-[12.5px] font-semibold text-stone-500 tracking-tight mb-3">Active Documents</h2>
               <div className="bg-white border border-stone-200/40 rounded-2xl shadow-[0_1px_8px_rgba(0,0,0,0.02)] overflow-hidden">
-                {documents.map((doc, i) => (
+                {documents
+                .filter(doc => !searchQuery || doc.title.toLowerCase().includes(searchQuery.toLowerCase()))
+                .map((doc, i) => (
                   <div 
                     key={doc.id} 
                     onClick={() => setSelectedDoc(doc)}
@@ -337,7 +338,7 @@ export function WikiShell() {
                 onClick={async () => {
                   setIsSavingDoc(true)
                   try {
-                    const res = await fetch("${BACKEND_URL}/api/docs/create", {
+                    const res = await fetch(`${BACKEND_URL}/api/docs/create`, {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({

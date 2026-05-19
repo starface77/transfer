@@ -25,6 +25,23 @@ export interface ToolStep {
   description?: string
 }
 
+export interface TaskPlan {
+  id: string
+  title: string
+  status: "pending" | "in_progress" | "done" | "error"
+  subtasks?: TaskPlan[]
+  estimatedTime?: string
+}
+
+export interface DebugAnalysis {
+  errorType: string
+  errorMessage: string
+  filePath: string
+  lineNumber: number
+  rootCause: string
+  suggestedFix: string
+}
+
 export interface Message {
   id: string
   role: "user" | "assistant"
@@ -32,6 +49,8 @@ export interface Message {
   createdAt: Date
   imageData?: string
   toolSteps?: ToolStep[]
+  taskPlan?: TaskPlan[]  // Hierarchical task plan
+  debugAnalysis?: DebugAnalysis  // Error analysis from debugger
 }
 
 // localStorage key for persisting messages
@@ -209,45 +228,8 @@ export function ChatShell() {
         }))
         setMessages(messagesWithDates)
       } else {
-        // Dynamic mock onboarding messages depending on session type
+        // Clean welcome for new sessions
         let defaultMessages: Message[] = []
-        if (activeSessionId === "session-1") {
-          defaultMessages = [
-            {
-              id: "onboarding-1",
-              role: "assistant",
-              content: "Welcome to your Field Workspace. I'm ready to help you coordinate, construct, and optimize **sharrowkin-core** modules.",
-              createdAt: new Date(),
-            }
-          ]
-        } else if (activeSessionId === "session-2") {
-          defaultMessages = [
-            {
-              id: "onboarding-2",
-              role: "assistant",
-              content: "Session initialized: **Web Scraping Agent**.\nHow can I help you extract, refine, and load structural data today?",
-              createdAt: new Date(),
-            }
-          ]
-        } else if (activeSessionId === "session-3") {
-          defaultMessages = [
-            {
-              id: "onboarding-3",
-              role: "assistant",
-              content: "Session initialized: **Code Review Session**.\nReady to run code quality check pipelines and generate diff summaries.",
-              createdAt: new Date(),
-            }
-          ]
-        } else {
-          defaultMessages = [
-            {
-              id: `onboarding-${activeSessionId}`,
-              role: "assistant",
-              content: "New Workspace chat session has been initialized. Ask me anything to get started!",
-              createdAt: new Date(),
-            }
-          ]
-        }
         setMessages(defaultMessages)
       }
       const savedModel = localStorage.getItem(MODEL_STORAGE_KEY) as AIModel | null
@@ -305,8 +287,7 @@ export function ChatShell() {
       setMessages(newMessages)
       setIsStreaming(true)
 
-      // --- MOCK STREAMING FOR HIGH-FIDELITY AGENT DEMO ---
-      // We simulate all agent steps and text generation over a timeline for a spectacular demo.
+      // --- REAL STREAMING VIA WEBSOCKET TO BACKEND AGENT ---
       let currentSteps: ToolStep[] = [
         { id: "step-1", name: "Recalling memory context (DSM)", status: "running", description: "Querying Dynamic Segmented Memory server..." }
       ];
@@ -387,15 +368,80 @@ export function ChatShell() {
                 return msg
               }))
               setTerminalLines(prev => [...prev, `💭 ${thinkingText}`])
-              
+
+            } else if (data.type === "task_plan") {
+              // Hierarchical task plan from planner
+              const plan = data.plan || []
+              setMessages(prev => prev.map(msg => {
+                if (msg.id === assistantMessage.id) {
+                  return { ...msg, taskPlan: plan }
+                }
+                return msg
+              }))
+              setTerminalLines(prev => [...prev, `📋 Execution plan generated: ${plan.length} top-level tasks`])
+
+            } else if (data.type === "task_update") {
+              // Update task status in plan
+              const taskId = data.task_id
+              const newStatus = data.status
+
+              const updateTaskStatus = (tasks: TaskPlan[]): TaskPlan[] => {
+                return tasks.map(task => {
+                  if (task.id === taskId) {
+                    return { ...task, status: newStatus }
+                  }
+                  if (task.subtasks) {
+                    return { ...task, subtasks: updateTaskStatus(task.subtasks) }
+                  }
+                  return task
+                })
+              }
+
+              setMessages(prev => prev.map(msg => {
+                if (msg.id === assistantMessage.id && msg.taskPlan) {
+                  return { ...msg, taskPlan: updateTaskStatus(msg.taskPlan) }
+                }
+                return msg
+              }))
+
             } else if (data.type === "log") {
               setTerminalLines(prev => [...prev, `[${data.level?.toUpperCase() || 'INFO'}] ${data.message}`])
-              
-            } else if (data.type === "patch_proposed") {
-              setTerminalLines(prev => [...prev, `✔ Proposed code patch generated successfully!`])
-              fullResponse += `\nI have generated a patch for your project. Please review it.\n`
-              updateContent(fullResponse)
-              setActiveDiffFile("agent-patch.diff") // trigger diff viewer
+
+            } else if (data.type === "debug_analysis") {
+              // Intelligent error analysis from debugger
+              const debugInfo = {
+                errorType: data.error_type || "Unknown",
+                errorMessage: data.error_message || "",
+                filePath: data.file_path || "",
+                lineNumber: data.line_number || 0,
+                rootCause: data.root_cause || "",
+                suggestedFix: data.suggested_fix || ""
+              }
+
+              // Add debug analysis to message
+              setMessages(prev => prev.map(msg => {
+                if (msg.id === assistantMessage.id) {
+                  return { ...msg, debugAnalysis: debugInfo }
+                }
+                return msg
+              }))
+
+              setTerminalLines(prev => [
+                ...prev,
+                `🐛 Error Analysis: ${debugInfo.errorType}`,
+                `   Root cause: ${debugInfo.rootCause}`,
+                `   Suggested fix: ${debugInfo.suggestedFix}`
+              ])
+
+            } else if (data.type === "diff" || data.type === "patch_proposed") {
+              const diffText = data.diff || ""
+              setTerminalLines(prev => [...prev, `✔ Patch generated: ${(data.files || []).length} file(s) changed`])
+              if (diffText) {
+                setTerminalLines(prev => [...prev, ...diffText.split("\n").slice(0, 30)])
+              }
+              // Store diff content and trigger diff viewer
+              setActiveDiffFile("agent-patch.diff")
+              ;(window as any).__sharrowkin_last_diff = diffText
               
             } else if (data.type === "test_result") {
               setTerminalLines(prev => [
@@ -489,10 +535,10 @@ export function ChatShell() {
             onClick={clearChat}
             variant="ghost"
             size="icon"
-            className="absolute top-4 left-4 z-20 h-10 w-10 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-700"
+            className="absolute top-4 left-4 z-20 h-9 w-9 rounded-xl bg-white/80 backdrop-blur-sm hover:bg-stone-100 text-stone-500 hover:text-stone-700 border border-stone-200/50 shadow-sm transition-all"
             aria-label="Reset chat"
           >
-            <MessageSquareDashed className="w-5 h-5" />
+            <MessageSquareDashed className="w-4 h-4" />
           </Button>
 
           <div className="flex-1 overflow-hidden">

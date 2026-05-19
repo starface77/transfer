@@ -322,6 +322,7 @@ class GeminiClient:
         memory_context: str,
         previous_error: str = "",
         action_history: list[str] = None,
+        file_contents: dict[str, str] = None,
     ) -> GeneratedPatch:
         if not self.api_key and not self.omniroute_base_url:
             raise GeminiConfigurationError(
@@ -329,7 +330,7 @@ class GeminiClient:
                 "Add one of them to the environment to enable code generation."
             )
 
-        prompt = self._build_prompt(task, workspace_summary, memory_context, previous_error, action_history)
+        prompt = self._build_prompt(task, workspace_summary, memory_context, previous_error, action_history, file_contents)
         
         # If Omniroute proxy is configured, route via Anthropic Messages API
         if self.omniroute_base_url:
@@ -351,7 +352,7 @@ class GeminiClient:
             )
             payload = {
                 "model": self.omniroute_model,
-                "max_tokens": 4096,
+                "max_tokens": 8192,
                 "system": system_prompt,
                 "messages": [
                     {"role": "user", "content": prompt}
@@ -467,6 +468,7 @@ class GeminiClient:
         memory_context: str,
         previous_error: str,
         action_history: list[str] = None,
+        file_contents: dict[str, str] = None,
     ) -> str:
         sections = [
             "TASK",
@@ -476,6 +478,14 @@ class GeminiClient:
             "RLD AND DSM MEMORY CONTEXT",
             memory_context,
         ]
+        if file_contents:
+            file_sections = []
+            for path, content in file_contents.items():
+                # Truncate very large files
+                if len(content) > 8000:
+                    content = content[:8000] + "\n... [truncated]"
+                file_sections.append(f"--- FILE: {path} ---\n{content}")
+            sections.extend(["CURRENT FILE CONTENTS (read before editing)", "\n\n".join(file_sections)])
         if action_history:
             formatted_actions = "\n".join(f"- {a}" for a in action_history)
             sections.extend(["PREVIOUS ACTIONS (DO NOT REPEAT FAILED ACTIONS)", formatted_actions])
@@ -483,6 +493,7 @@ class GeminiClient:
             sections.extend(["PREVIOUS PYTEST OUTPUT OR PATCH ERROR", previous_error])
         sections.append(
             "Generate the smallest safe patch. Return complete replacement text only for files you change. "
+            "You MUST use the actual file contents provided above as the base for your edits. "
             "You can specify shell commands in 'commands' if you need to install packages, run scripts, or compile things."
         )
         return "\n\n".join(sections)

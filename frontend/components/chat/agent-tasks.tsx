@@ -56,39 +56,6 @@ export function AgentTasks() {
       } catch (e) {
         console.error("Failed to parse todos:", e)
       }
-    } else {
-      const defaultTodos: Todo[] = [
-        {
-          id: "TODO-1",
-          title: "Refactor sidebar components for feather-light style",
-          description: "Applies a modern white container style with border-stone-200/60 and smooth shadow to the main sidebar components.",
-          priority: "high",
-          category: "Frontend",
-          completed: false,
-          dueDate: "2026-05-22",
-          subtasks: [
-            { id: "sub-1-1", title: "Update LeftSidebar layouts to match Design Language", completed: true },
-            { id: "sub-1-2", title: "Synchronize active link indicators", completed: false }
-          ],
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: "TODO-2",
-          title: "Optimize non-parametric memory storage in DSM",
-          description: "Implement temporal decay calculations and reciprocal rank fusion optimization on BM25 indices.",
-          priority: "high",
-          category: "DSM",
-          completed: false,
-          dueDate: "2026-05-25",
-          subtasks: [
-            { id: "sub-2-1", title: "Develop density weighting algorithm", completed: false },
-            { id: "sub-2-2", title: "Write benchmark evaluation tests", completed: false }
-          ],
-          createdAt: new Date().toISOString()
-        }
-      ]
-      setTodos(defaultTodos)
-      localStorage.setItem("sharrowkin-todo-items", JSON.stringify(defaultTodos))
     }
   }, [])
 

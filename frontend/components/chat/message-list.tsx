@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import Image from "next/image"
 import { MessageBubble } from "./message-bubble"
 import type { Message } from "./chat-shell"
 import { TypingIndicator } from "./typing-indicator"
@@ -140,14 +141,22 @@ export function MessageList({ messages, isStreaming, error, onRetry, isLoaded, o
       {/* Empty state */}
       {messages.length === 0 && !error && !isStreaming && (
         <div className="flex flex-col items-center justify-center h-full text-center text-stone-400">
-          <div className={`mb-4 ${hasAnimated ? "orb-intro" : ""}`}>
-            <AnimatedOrb size={128} />
+          <div className={`mb-6 ${hasAnimated ? "orb-intro" : ""}`}>
+            <Image 
+              src="/images/logo.png" 
+              alt="Sharrowkin" 
+              width={64} 
+              height={64} 
+              quality={100}
+              unoptimized
+              className="opacity-70 drop-shadow-md"
+            />
           </div>
-          <p className={`text-lg font-medium text-gray-500 ${hasAnimated ? "text-blur-intro" : ""}`}>
-            Hi, my name is Jarvis
+          <p className={`text-[18px] font-semibold text-stone-700 tracking-tight ${hasAnimated ? "text-blur-intro" : ""}`}>
+            Sharrowkin Agent
           </p>
-          <p className={`text-sm mt-1 text-gray-400 ${hasAnimated ? "text-blur-intro-delay" : ""}`}>
-            Send a message to begin chatting with the AI assistant
+          <p className={`text-[14px] mt-2 text-stone-400 font-normal leading-relaxed max-w-[320px] ${hasAnimated ? "text-blur-intro-delay" : ""}`}>
+            Your autonomous coding assistant. Send a message to begin.
           </p>
         </div>
       )}

@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { ChevronDown, Menu, X, Plus, MessageSquare, BookOpen, CheckSquare2, Settings } from 'lucide-react';
+import { ChevronDown, Menu, X, Plus, MessageSquare, BookOpen, CheckSquare2, Settings, Palette } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getAgentName } from '@/lib/persona-api';
 
 interface LeftSidebarProps {
   isOpen: boolean;
@@ -17,6 +18,29 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeSessionId = searchParams?.get('session') || 'session-1';
+  const [agentName, setAgentName] = useState('Sharrowkin');
+
+  // Fetch agent name on mount and when persona changes
+  useEffect(() => {
+    const fetchAgentName = async () => {
+      try {
+        const response = await getAgentName();
+        setAgentName(response.agent_name);
+      } catch (error) {
+        console.error('Failed to fetch agent name:', error);
+      }
+    };
+
+    fetchAgentName();
+
+    // Listen for persona change events
+    const handlePersonaChange = () => {
+      fetchAgentName();
+    };
+
+    window.addEventListener('persona-changed', handlePersonaChange);
+    return () => window.removeEventListener('persona-changed', handlePersonaChange);
+  }, []);
 
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     sessions: true,
@@ -37,9 +61,7 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
       setSessions(JSON.parse(storedSessions));
     } else {
       const defaultSessions = [
-        { id: 'session-1', label: 'Clone starface77/NareCLI' },
-        { id: 'session-2', label: 'Web Scraping Agent' },
-        { id: 'session-3', label: 'Code Review Session' },
+        { id: 'session-1', label: 'New Chat' },
       ];
       localStorage.setItem('sharrowkin-sessions-list', JSON.stringify(defaultSessions));
       setSessions(defaultSessions);
@@ -49,10 +71,6 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
     const storedCommands = localStorage.getItem('sharrowkin-recent-commands');
     if (storedCommands) {
       setRecentCommands(JSON.parse(storedCommands));
-    } else {
-      const defaultCommands = ['dsm status', 'npm run build', 'git status'];
-      localStorage.setItem('sharrowkin-recent-commands', JSON.stringify(defaultCommands));
-      setRecentCommands(defaultCommands);
     }
   }, []);
 
@@ -169,7 +187,7 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
               className="opacity-90 drop-shadow-sm object-contain"
             />
           </div>
-          <span className="text-[13.5px] font-semibold text-stone-800 tracking-tight">Sharrowkin</span>
+          <span className="text-[13.5px] font-semibold text-stone-800 tracking-tight">{agentName}</span>
           <span className="text-[10px] font-medium text-stone-500 bg-stone-100 border border-stone-200/50 px-1.5 py-0.5 rounded-md ml-1 leading-none">Beta</span>
         </div>
 
@@ -191,6 +209,7 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
           <div className="space-y-0.5">
             {[
               { icon: MessageSquare, label: 'Chat', href: '/chat' },
+              { icon: Palette, label: 'Personas', href: '/personas' },
               { icon: BookOpen, label: 'Wiki', href: '/wiki' },
               { icon: CheckSquare2, label: 'Review', href: '/review' },
               { icon: Settings, label: 'Settings', href: '/settings' },
@@ -220,7 +239,7 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
               onClick={() => toggleSection('sessions')}
               className="w-full flex items-center justify-between px-3 py-1.5 group"
             >
-              <span className="text-[11px] font-medium text-stone-400/80 uppercase tracking-widest group-hover:text-stone-500 transition-colors">Sessions</span>
+              <span className="text-[11px] font-semibold text-stone-400/70 uppercase tracking-wider group-hover:text-stone-500 transition-colors">Sessions</span>
               <ChevronDown
                 strokeWidth={1.5}
                 size={14}
@@ -257,7 +276,7 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
               onClick={() => toggleSection('recent')}
               className="w-full flex items-center justify-between px-3 py-1.5 group"
             >
-              <span className="text-[11px] font-medium text-stone-400/80 uppercase tracking-widest group-hover:text-stone-500 transition-colors">Recent Commands</span>
+              <span className="text-[11px] font-semibold text-stone-400/70 uppercase tracking-wider group-hover:text-stone-500 transition-colors">Recent Commands</span>
               <ChevronDown
                 strokeWidth={1.5}
                 size={14}

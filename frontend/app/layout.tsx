@@ -7,8 +7,8 @@ import "./globals.css"
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
 
 export const metadata: Metadata = {
-  title: "AI Agent Assistant",
-  description: "Autonomous Agent UI",
+  title: "Sharrowkin — Autonomous Agent",
+  description: "AI-powered autonomous coding agent by NARE Labs",
   icons: {
     icon: [
       {
@@ -43,7 +43,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} font-sans antialiased bg-[#f7f7f9] text-stone-800`}>
+      <body className={`${inter.variable} font-sans antialiased bg-[#f8f8fa] text-stone-800`}>
         {children}
         <Analytics />
       </body>

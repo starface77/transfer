@@ -48,6 +48,7 @@ for relative in (
         sys.path.insert(0, str(candidate))
 
 from backend.agent import PHASES, SharrowkinAgent
+from backend.personas import get_persona_manager, activate_persona, deactivate_persona, get_agent_name
 
 try:
     from cognition.fieldscript.fieldscript_v1 import FieldScript
@@ -198,6 +199,83 @@ class CreateDocRequest(BaseModel):
 @app.get("/api/health")
 def health() -> dict[str, object]:
     return {"status": "ok", "phases": PHASES}
+
+
+# --- Persona API Endpoints ---
+@app.get("/api/personas")
+def list_personas():
+    """Get all available personas."""
+    manager = get_persona_manager()
+    personas = manager.list_personas()
+
+    return {
+        "personas": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "description": p.description,
+                "colors": p.colors,
+                "tags": p.tags,
+                "audio_enabled": p.audio_enabled,
+            }
+            for p in personas
+        ],
+        "active_persona": manager.active_persona.id if manager.active_persona else None,
+    }
+
+
+@app.get("/api/personas/active")
+def get_active_persona():
+    """Get the currently active persona."""
+    manager = get_persona_manager()
+
+    if manager.active_persona:
+        return {
+            "id": manager.active_persona.id,
+            "name": manager.active_persona.name,
+            "description": manager.active_persona.description,
+            "colors": manager.active_persona.colors,
+        }
+
+    return {"id": None, "name": "Default", "description": "Standard Sharrowkin agent"}
+
+
+class PersonaActivateRequest(BaseModel):
+    persona_id: str
+
+
+@app.post("/api/personas/activate")
+def activate_persona_endpoint(request: PersonaActivateRequest):
+    """Activate a persona."""
+    success = activate_persona(request.persona_id)
+
+    if not success:
+        return {"status": "error", "message": f"Persona '{request.persona_id}' not found"}
+
+    return {
+        "status": "success",
+        "message": f"Persona '{request.persona_id}' activated",
+        "persona_id": request.persona_id,
+    }
+
+
+@app.post("/api/personas/deactivate")
+def deactivate_persona_endpoint():
+    """Deactivate the current persona."""
+    deactivate_persona()
+
+    return {
+        "status": "success",
+        "message": "Persona deactivated, using default agent",
+    }
+
+
+@app.get("/api/personas/agent-name")
+def get_agent_name_endpoint():
+    """Get the current agent name based on active persona."""
+    return {
+        "agent_name": get_agent_name()
+    }
 
 
 @app.post("/api/chat")
@@ -551,8 +629,10 @@ async def agent_socket(websocket: WebSocket) -> None:
         print(f"[WS] Using workspace: {workspace_path}")
 
         try:
-            agent = SharrowkinAgent()
-            async for event in agent.run(task, workspace_path):
+            global _GLOBAL_AGENT
+            if '_GLOBAL_AGENT' not in globals():
+                _GLOBAL_AGENT = SharrowkinAgent()
+            async for event in _GLOBAL_AGENT.run(task, workspace_path):
                 await websocket.send_json(event)
         except Exception as exc:
             print(f"[WS] Agent error: {exc}")

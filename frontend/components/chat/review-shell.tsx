@@ -127,26 +127,7 @@ export function ReviewShell() {
       }
     } catch (err) {
       console.error("Failed to load real git changes:", err)
-      // Fallback mock so screen isn't broken
-      setPullRequests([
-        { 
-          id: "PR-124", 
-          title: "Refactor sidebar components for feather-light style", 
-          repo: "starface77/shrrowkincleanui", 
-          status: "pending", 
-          time: "2 hrs ago",
-          description: "Applies a modern white container style with border-stone-200/60 and smooth shadow to the main sidebar components.",
-          filesChanged: [
-            {
-              name: "components/chat/chat-shell.tsx",
-              additions: 1,
-              deletions: 1,
-              original: '  <div className="bg-stone-50 border border-stone-200 p-5 rounded-2xl">',
-              modified: '  <div className="bg-white border border-stone-200/60 rounded-2xl shadow-[0_1px_8px_rgba(0,0,0,0.01)]">'
-            }
-          ]
-        }
-      ])
+      setPullRequests([])
     }
   }, [])
 
