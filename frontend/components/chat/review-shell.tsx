@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useCallback } from "react"
 import { LeftSidebar } from "./left-sidebar"
 import { RightSidebar } from "./right-sidebar"
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000"
 import { 
   CheckSquare2, 
   Github, 
@@ -25,7 +27,7 @@ export function ReviewShell() {
   
   // Terminal emulator state for RightSidebar
   const [terminalLines, setTerminalLines] = useState<string[]>([
-    "sharrowkyn-core ~ bash",
+    "sharrowkin-core ~ bash",
     "$ dsm status",
     "→ MoE vector space connected: stable",
     "→ 12,408 Memory chunks active",
@@ -65,7 +67,7 @@ export function ReviewShell() {
     setIsRunningTask(true)
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/terminal", {
+      const response = await fetch(`${BACKEND_URL}/api/terminal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ command: cmd }),
@@ -118,7 +120,7 @@ export function ReviewShell() {
 
   const fetchChanges = useCallback(async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/git/changes")
+      const res = await fetch(`${BACKEND_URL}/api/git/changes`)
       if (res.ok) {
         const data = await res.json()
         setPullRequests(data)
@@ -207,7 +209,7 @@ export function ReviewShell() {
                   setRepoUrl("")
                   setConnectError("")
                   try {
-                    await fetch("http://127.0.0.1:8000/api/git/connect", {
+                    await fetch(`${BACKEND_URL}/api/git/connect`, {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ username: "", token: "", repo_url: "" })
@@ -520,7 +522,7 @@ export function ReviewShell() {
                   setIsConnecting(true)
                   setConnectError("")
                   try {
-                    const response = await fetch("http://127.0.0.1:8000/api/git/connect", {
+                    const response = await fetch(`${BACKEND_URL}/api/git/connect`, {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({

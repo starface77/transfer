@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ChevronDown, Menu, X, Plus, MessageSquare, BookOpen, CheckSquare2, Settings } from 'lucide-react';
@@ -31,7 +32,7 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
   // Load sessions and recent commands on mount
   useEffect(() => {
     // 1. Sessions List
-    const storedSessions = localStorage.getItem('sharrowkyn-sessions-list');
+    const storedSessions = localStorage.getItem('sharrowkin-sessions-list');
     if (storedSessions) {
       setSessions(JSON.parse(storedSessions));
     } else {
@@ -40,17 +41,17 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
         { id: 'session-2', label: 'Web Scraping Agent' },
         { id: 'session-3', label: 'Code Review Session' },
       ];
-      localStorage.setItem('sharrowkyn-sessions-list', JSON.stringify(defaultSessions));
+      localStorage.setItem('sharrowkin-sessions-list', JSON.stringify(defaultSessions));
       setSessions(defaultSessions);
     }
 
     // 2. Recent Commands List
-    const storedCommands = localStorage.getItem('sharrowkyn-recent-commands');
+    const storedCommands = localStorage.getItem('sharrowkin-recent-commands');
     if (storedCommands) {
       setRecentCommands(JSON.parse(storedCommands));
     } else {
       const defaultCommands = ['dsm status', 'npm run build', 'git status'];
-      localStorage.setItem('sharrowkyn-recent-commands', JSON.stringify(defaultCommands));
+      localStorage.setItem('sharrowkin-recent-commands', JSON.stringify(defaultCommands));
       setRecentCommands(defaultCommands);
     }
   }, []);
@@ -58,13 +59,13 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
   // Watch for custom event updates to recent commands (when user submits a command in terminal)
   useEffect(() => {
     const handleCommandsUpdate = () => {
-      const storedCommands = localStorage.getItem('sharrowkyn-recent-commands');
+      const storedCommands = localStorage.getItem('sharrowkin-recent-commands');
       if (storedCommands) {
         setRecentCommands(JSON.parse(storedCommands));
       }
     };
-    window.addEventListener('sharrowkyn-commands-updated', handleCommandsUpdate);
-    return () => window.removeEventListener('sharrowkyn-commands-updated', handleCommandsUpdate);
+    window.addEventListener('sharrowkin-commands-updated', handleCommandsUpdate);
+    return () => window.removeEventListener('sharrowkin-commands-updated', handleCommandsUpdate);
   }, []);
 
   // Add a new session
@@ -76,7 +77,7 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
       label: `New Chat Session ${sessions.length + 1}`,
     };
     const updatedSessions = [newSession, ...sessions];
-    localStorage.setItem('sharrowkyn-sessions-list', JSON.stringify(updatedSessions));
+    localStorage.setItem('sharrowkin-sessions-list', JSON.stringify(updatedSessions));
     setSessions(updatedSessions);
 
     // Redirect to the new chat session page
@@ -86,7 +87,7 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
   // Click on a recent command (sends it directly to the terminal on the right side)
   const handleCommandClick = useCallback((cmd: string) => {
     // Custom window event which is listened to by the active TerminalEmulator component
-    window.dispatchEvent(new CustomEvent('sharrowkyn-terminal-cmd', { detail: cmd }));
+    window.dispatchEvent(new CustomEvent('sharrowkin-terminal-cmd', { detail: cmd }));
   }, []);
 
   // --- APPLE MINIMALIST SIDEBAR RESIZING ---
@@ -137,12 +138,12 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
       <aside
         style={{ width: isOpen ? `${width}px` : '0px' }}
         className={cn(
-          "fixed lg:relative z-40 h-full bg-transparent flex flex-col overflow-hidden border-r border-stone-100/80 select-none relative shrink-0",
+          "fixed lg:relative z-40 h-full bg-stone-50/50 flex flex-col overflow-hidden border-r border-stone-200/60 select-none relative shrink-0",
           isResizing ? "transition-none" : "transition-all duration-300 ease-in-out",
           !isOpen && "border-none"
         )}
       >
-        
+
         {/* Apple Style Resizer handle on the right edge */}
         {isOpen && (
           <div
@@ -154,20 +155,38 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
           </div>
         )}
 
-        {/* Header */}
-        <div className="px-4 pt-6 pb-2">
-          <button 
+        {/* Branding Header */}
+        <div className="px-5 pt-7 pb-4 flex items-center gap-2.5">
+          <div className="flex items-center justify-center shrink-0 w-6 h-6">
+            <Image
+              src="/images/logo.png"
+              alt="NARE Labs"
+              width={24}
+              height={24}
+              quality={100}
+              priority
+              unoptimized
+              className="opacity-90 drop-shadow-sm object-contain"
+            />
+          </div>
+          <span className="text-[13.5px] font-semibold text-stone-800 tracking-tight">Sharrowkin</span>
+          <span className="text-[10px] font-medium text-stone-500 bg-stone-100 border border-stone-200/50 px-1.5 py-0.5 rounded-md ml-1 leading-none">Beta</span>
+        </div>
+
+        {/* New Chat Button */}
+        <div className="px-4 pb-2">
+          <button
             onClick={handleNewChat}
-            className="w-full flex items-center justify-between px-3 py-2 bg-white/50 border border-stone-200/30 rounded-[12px] hover:bg-white transition-colors shadow-[0_1px_8px_rgba(0,0,0,0.02)] group"
+            className="w-full flex items-center justify-between px-3 py-2 bg-transparent hover:bg-stone-100/60 transition-colors rounded-[10px] group"
           >
-            <span className="text-[13px] font-normal text-stone-600 group-hover:text-stone-900 transition-colors">New Chat</span>
+            <span className="text-[13px] font-medium text-stone-600 group-hover:text-stone-900 transition-colors">New Chat</span>
             <Plus strokeWidth={1.5} size={16} className="text-stone-400 group-hover:text-stone-600 transition-colors" />
           </button>
         </div>
 
         {/* Main Navigation */}
         <div className="flex-1 overflow-y-auto px-3 py-2 space-y-4 no-scrollbar">
-          
+
           {/* Main Links */}
           <div className="space-y-0.5">
             {[
@@ -183,8 +202,8 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
                   href={href === '/chat' ? `/chat?session=${activeSessionId}` : href}
                   className={cn(
                     "w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 border border-transparent",
-                    active 
-                      ? 'bg-white shadow-[0_1px_8px_rgba(0,0,0,0.02)] border-stone-200/30 text-stone-900 font-medium' 
+                    active
+                      ? 'bg-white shadow-[0_1px_8px_rgba(0,0,0,0.02)] border-stone-200/30 text-stone-900 font-medium'
                       : 'text-stone-500 hover:bg-stone-200/20 hover:text-stone-900'
                   )}
                 >
@@ -208,7 +227,7 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
                 className={`text-stone-400/70 transition-transform duration-200 ${expandedSections.sessions ? 'rotate-0' : '-rotate-90'}`}
               />
             </button>
-            
+
             {expandedSections.sessions && (
               <div className="mt-1 space-y-0.5">
                 {sessions.map((session) => {
@@ -245,11 +264,11 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
                 className={`text-stone-400/70 transition-transform duration-200 ${expandedSections.recent ? 'rotate-0' : '-rotate-90'}`}
               />
             </button>
-            
+
             {expandedSections.recent && (
               <div className="mt-1 space-y-0.5">
                 {recentCommands.map((cmd, index) => (
-                  <button 
+                  <button
                     key={index}
                     onClick={() => handleCommandClick(cmd)}
                     className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-stone-500 hover:bg-stone-200/20 hover:text-stone-900 transition-colors text-left"

@@ -1,34 +1,36 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, Suspense } from "react"
 import { LeftSidebar } from "@/components/chat/left-sidebar"
 import { RightSidebar } from "@/components/chat/right-sidebar"
 import { Sliders, Shield, Folder, RefreshCw, Cpu } from "lucide-react"
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000"
 
 export default function SettingsPage() {
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true)
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true)
   
   // Settings state
-  const [workspacePath, setWorkspacePath] = useState("c:\\Users\\danik\\Documents\\Field")
-  const [selectedModel, setSelectedModel] = useState("google/gemini-3.1-pro")
+  const [workspacePath, setWorkspacePath] = useState("")
+  const [selectedModel, setSelectedModel] = useState("google/gemini-2.5-flash")
   const [dsmSize, setDsmSize] = useState("12,408 active chunks")
 
   // Sync state with localStorage and backend on mount
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const res = await fetch("http://127.0.0.1:8000/api/settings")
+        const res = await fetch(`${BACKEND_URL}/api/settings`)
         if (res.ok) {
           const data = await res.json()
           if (data.workspace_path) {
             setWorkspacePath(data.workspace_path)
-            localStorage.setItem("sharrowkyn-workspace-path", data.workspace_path)
+            localStorage.setItem("sharrowkin-workspace-path", data.workspace_path)
           }
         }
       } catch (err) {
         console.error("Failed to load settings from backend:", err)
-        const savedPath = localStorage.getItem("sharrowkyn-workspace-path")
+        const savedPath = localStorage.getItem("sharrowkin-workspace-path")
         if (savedPath) setWorkspacePath(savedPath)
       }
     }
@@ -39,11 +41,11 @@ export default function SettingsPage() {
   }, [])
 
   const handleSave = async () => {
-    localStorage.setItem("sharrowkyn-workspace-path", workspacePath)
+    localStorage.setItem("sharrowkin-workspace-path", workspacePath)
     localStorage.setItem("chat-selected-model", selectedModel)
     
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/settings", {
+      const response = await fetch(`${BACKEND_URL}/api/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workspace_path: workspacePath })
@@ -61,7 +63,9 @@ export default function SettingsPage() {
 
   return (
     <div className="h-dvh bg-background flex overflow-hidden">
-      <LeftSidebar isOpen={leftSidebarOpen} onToggle={() => setLeftSidebarOpen(!leftSidebarOpen)} />
+      <Suspense>
+        <LeftSidebar isOpen={leftSidebarOpen} onToggle={() => setLeftSidebarOpen(!leftSidebarOpen)} />
+      </Suspense>
 
       {/* Main Area */}
       <div className="flex-1 flex flex-col relative min-w-0 bg-[#f7f7f9] overflow-hidden">
@@ -80,7 +84,7 @@ export default function SettingsPage() {
             
             <div className="flex flex-col gap-1">
               <h1 className="text-xl font-light text-stone-800 tracking-tight">Configuration</h1>
-              <p className="text-[13px] text-stone-400 font-light">Fine-tune your local Sharrowkyn autonomous engine.</p>
+              <p className="text-[13px] text-stone-400 font-light">Fine-tune your local sharrowkin autonomous engine.</p>
             </div>
 
             {/* Apple Card */}
@@ -98,7 +102,7 @@ export default function SettingsPage() {
                   onChange={(e) => setWorkspacePath(e.target.value)}
                   className="w-full p-3 border border-stone-200 rounded-xl text-[12.5px] font-mono focus:outline-none focus:border-stone-450 transition-colors bg-stone-50/50"
                 />
-                <span className="text-[11px] text-stone-400 block">The folder SharrowkynAgent will scan, read, and write code to.</span>
+                <span className="text-[11px] text-stone-400 block">The folder sharrowkinAgent will scan, read, and write code to.</span>
               </div>
 
               {/* Model selection */}
@@ -112,11 +116,11 @@ export default function SettingsPage() {
                   onChange={(e) => setSelectedModel(e.target.value)}
                   className="w-full p-3 border border-stone-200 rounded-xl text-[13px] focus:outline-none focus:border-stone-450 transition-colors bg-stone-50/50"
                 >
-                  <option value="google/gemini-3.1-pro">Gemini 3.1 Pro</option>
-                  <option value="google/gemini-3.1-flash">Gemini 3.1 Flash</option>
-                  <option value="openai/gpt-5.5">GPT-5.5 Flagship</option>
+                  <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+                  <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
+                  <option value="openai/gpt-4o">GPT-4o</option>
                   <option value="openai/o3-mini">o3-mini Reasoning</option>
-                  <option value="anthropic/claude-4.7-opus">Claude 4.7 Opus</option>
+                  <option value="anthropic/claude-sonnet-4">Claude Sonnet 4</option>
                 </select>
               </div>
 
@@ -150,7 +154,7 @@ export default function SettingsPage() {
       <RightSidebar 
         isOpen={rightSidebarOpen} 
         onToggle={() => setRightSidebarOpen(!rightSidebarOpen)} 
-        terminalLines={["sharrowkyn-core ~ settings console"]}
+        terminalLines={["sharrowkin-core ~ settings console"]}
         isRunningTask={false}
         currentInput=""
         setCurrentInput={() => {}}

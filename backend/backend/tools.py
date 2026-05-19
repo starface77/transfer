@@ -10,9 +10,9 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+BACKEND_DIR = Path(__file__).resolve().parent
 for relative in ("integrations/semanticgit/src",):
-    candidate = REPO_ROOT / relative
+    candidate = BACKEND_DIR / relative
     if candidate.exists() and str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 

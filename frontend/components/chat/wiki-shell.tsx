@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useCallback } from "react"
 import { LeftSidebar } from "./left-sidebar"
 import { RightSidebar } from "./right-sidebar"
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000"
 import { Search, FileText, Plus, Folder, Clock, MoreHorizontal, ArrowLeft, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -12,7 +14,7 @@ export function WikiShell() {
 
   // Terminal emulator state for RightSidebar
   const [terminalLines, setTerminalLines] = useState<string[]>([
-    "sharrowkyn-core ~ bash",
+    "sharrowkin-core ~ bash",
     "$ dsm status",
     "→ MoE vector space connected: stable",
     "→ 12,408 Memory chunks active",
@@ -94,7 +96,7 @@ export function WikiShell() {
 
   const fetchDocs = useCallback(async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/docs")
+      const res = await fetch("${BACKEND_URL}/api/docs")
       if (res.ok) {
         const data = await res.json()
         setDocuments(data)
@@ -120,7 +122,7 @@ export function WikiShell() {
     
     const fetchContent = async () => {
       try {
-        const res = await fetch(`http://127.0.0.1:8000/api/docs/content?filename=${encodeURIComponent(selectedDoc.filename)}`)
+        const res = await fetch(`${BACKEND_URL}/api/docs/content?filename=${encodeURIComponent(selectedDoc.filename)}`)
         if (res.ok) {
           const data = await res.json()
           setDocContent(data.content)
@@ -335,7 +337,7 @@ export function WikiShell() {
                 onClick={async () => {
                   setIsSavingDoc(true)
                   try {
-                    const res = await fetch("http://127.0.0.1:8000/api/docs/create", {
+                    const res = await fetch("${BACKEND_URL}/api/docs/create", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({

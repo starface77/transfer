@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useCallback, useRef } from "react"
 import { LeftSidebar } from "./left-sidebar"
 import { RightSidebar } from "./right-sidebar"
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000"
 import { 
   Zap, 
   Play, 
@@ -35,7 +37,7 @@ export function AutomationsShell() {
 
   // Terminal state for RightSidebar
   const [terminalLines, setTerminalLines] = useState<string[]>([
-    "sharrowkyn-core ~ bash",
+    "sharrowkin-core ~ bash",
     "$ dsm status",
     "→ MoE vector space connected: stable",
     "→ 12,408 Memory chunks active",
@@ -55,7 +57,7 @@ export function AutomationsShell() {
   const [currentPhase, setCurrentPhase] = useState<string>("idle") // idle, observe, recall, reason, stabilize, commit, failed
   const [generatedDiff, setGeneratedDiff] = useState<string>("")
   const [taskPrompt, setTaskPrompt] = useState("Run full test suite via pytest and stabilize any failing tests")
-  const [targetWorkspace, setTargetWorkspace] = useState("c:\\Users\\danik\\Documents\\Field")
+  const [targetWorkspace, setTargetWorkspace] = useState("")
   
   const socketRef = useRef<WebSocket | null>(null)
   const logsEndRef = useRef<HTMLDivElement | null>(null)
@@ -92,7 +94,7 @@ export function AutomationsShell() {
     setIsRunningTask(true)
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/terminal", {
+      const response = await fetch(`${BACKEND_URL}/api/terminal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ command: cmd }),
@@ -127,7 +129,8 @@ export function AutomationsShell() {
     setCurrentPhase("observe")
     setTerminalLines(prev => [...prev, ``, `[AGENT] Starting autonomous workspace task: "${activePrompt}"`])
 
-    const ws = new WebSocket("ws://127.0.0.1:8000/ws/agent")
+    const WS_URL = BACKEND_URL.replace(/^http/, "ws")
+    const ws = new WebSocket(`${WS_URL}/ws/agent`)
     socketRef.current = ws
 
     ws.onopen = () => {
@@ -135,7 +138,7 @@ export function AutomationsShell() {
         task: activePrompt,
         workspace_path: targetWorkspace
       }))
-      setAgentLogs(prev => [...prev, "[WS] Connected to Sharrowkyn agent broker.", "[WS] Dispatched task payload..."])
+      setAgentLogs(prev => [...prev, "[WS] Connected to sharrowkin agent broker.", "[WS] Dispatched task payload..."])
     }
 
     ws.onmessage = (event) => {
@@ -260,7 +263,7 @@ export function AutomationsShell() {
         <div className="h-14 border-b border-stone-200/60 flex items-center justify-between px-8 bg-white/80 backdrop-blur-md z-10 shrink-0">
           <div className="flex items-center gap-2.5 text-stone-850">
             <Zap className="w-4 h-4 text-stone-400" strokeWidth={1.5} />
-            <span className="font-medium text-[13px] tracking-wide text-stone-700">Sharrowkyn AI Core</span>
+            <span className="font-medium text-[13px] tracking-wide text-stone-700">sharrowkin AI Core</span>
           </div>
           <div className="flex items-center gap-4 text-[11px] text-stone-400 font-mono">
             <div className="flex items-center gap-1.5">
@@ -277,7 +280,7 @@ export function AutomationsShell() {
         <div className="flex-1 overflow-y-auto p-8 relative">
           <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-300">
             
-            {/* 1. AGENT HERO CARD: Meet Sharrowkyn, connected to your project! */}
+            {/* 1. AGENT HERO CARD: Meet sharrowkin, connected to your project! */}
             <div className="border border-stone-200/60 bg-white rounded-3xl p-8 shadow-[0_1px_15px_rgba(0,0,0,0.015)] relative overflow-hidden">
               <div className="absolute top-0 right-0 w-64 h-64 bg-stone-50 rounded-full blur-3xl -z-10 translate-x-12 -translate-y-12" />
               
@@ -290,7 +293,7 @@ export function AutomationsShell() {
 
                 <div className="space-y-1 flex-1">
                   <div className="flex items-center gap-2.5 flex-wrap">
-                    <h2 className="text-lg font-normal text-stone-800 tracking-tight">Sharrowkyn Developer Agent</h2>
+                    <h2 className="text-lg font-normal text-stone-800 tracking-tight">sharrowkin Developer Agent</h2>
                     <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 border border-stone-200/30">
                       v0.1.0 Active
                     </span>

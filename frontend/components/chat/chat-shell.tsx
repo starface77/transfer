@@ -13,6 +13,10 @@ import { DiffViewer } from "./diff-viewer"
 import { TerminalEmulator } from "./terminal-emulator"
 import { cn } from "@/lib/utils"
 
+// Backend URL — configurable via env var, defaults to localhost
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000"
+const WS_URL = BACKEND_URL.replace(/^http/, "ws")
+
 // Data model for messages
 export interface ToolStep {
   id: string
@@ -41,13 +45,13 @@ function generateId(): string {
 export function ChatShell() {
   const searchParams = useSearchParams()
   const activeSessionId = searchParams?.get("session") || "session-1"
-  const STORAGE_KEY = `sharrowkyn-session-messages-${activeSessionId}`
+  const STORAGE_KEY = `sharrowkin-session-messages-${activeSessionId}`
 
   const [messages, setMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [abortController, setAbortController] = useState<AbortController | null>(null)
-  const [selectedModel, setSelectedModel] = useState<AIModel>("google/gemini-3.1-pro")
+  const [selectedModel, setSelectedModel] = useState<AIModel>("google/gemini-2.5-flash")
   const [isLoaded, setIsLoaded] = useState(false)
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true)
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true)
@@ -55,7 +59,7 @@ export function ChatShell() {
 
   // --- LIFTED TERMINAL EMULATOR STATE ---
   const [terminalLines, setTerminalLines] = useState<string[]>([
-    "sharrowkyn-core ~ bash",
+    "sharrowkin-core ~ bash",
     "$ agent start --mode=autonomous",
     "[INFO] Initializing workspace...",
     "[INFO] Loading memory buffers (DSM)...",
@@ -69,80 +73,38 @@ export function ChatShell() {
   const [terminalHeight, setTerminalHeight] = useState(250)
   const [isResizingTerminal, setIsResizingTerminal] = useState(false)
 
-  const runBuildCommand = useCallback(() => {
+  // Run a real command via the backend terminal API
+  const runRealCommand = useCallback(async (cmd: string) => {
     if (isRunningTask) return
     setIsRunningTask(true)
-    setTerminalLines((prev) => [...prev, "", "$ npm run build"])
-
-    const steps = [
-      "▶ next build",
-      "info  - Need to disable some telemetry rules...",
-      "info  - Creating an optimized production build...",
-      "info  - Compiled successfully",
-      "info  - Collecting page data...",
-      "info  - Generating static pages (0/14)...",
-      "info  - Generating static pages (14/14)...",
-      "✔ Finalizing page optimization...",
-      "○  (Static)     automatically rendered as static HTML",
-      "λ  (Server)     server-rendered on demand",
-      "Route (app)                              Size     First Load JS",
-      "┌ ○ /                                    5.24 kB        84.1 kB",
-      "├ ○ /review                              4.12 kB        80.3 kB",
-      "└ ○ /automations                         3.88 kB        79.1 kB",
-      "✔ First load JS shared by all            74.9 kB",
-      "✔ Build completed successfully inside 2.1s.",
-    ]
-
-    let idx = 0
-    const interval = setInterval(() => {
-      if (idx < steps.length) {
-        setTerminalLines((prev) => [...prev, steps[idx]])
-        idx++
-      } else {
-        clearInterval(interval)
-        setIsRunningTask(false)
+    setTerminalLines((prev) => [...prev, "", `$ ${cmd}`])
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/terminal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: cmd }),
+      })
+      const data = await response.json()
+      if (data.output && Array.isArray(data.output)) {
+        setTerminalLines((prev) => [...prev, ...data.output])
       }
-    }, 150)
+    } catch (err: any) {
+      setTerminalLines((prev) => [...prev, `error: ${err.message}`])
+    } finally {
+      setIsRunningTask(false)
+    }
   }, [isRunningTask])
+
+  const runBuildCommand = useCallback(() => {
+    runRealCommand("npm run build")
+  }, [runRealCommand])
 
   const runTestCommand = useCallback(() => {
-    if (isRunningTask) return
-    setIsRunningTask(true)
-    setTerminalLines((prev) => [...prev, "", "$ npm run test:unit"])
-
-    const steps = [
-      "▶ jest --config=jest.config.js",
-      " PASS  tests/dsm-indexing.test.ts (1.24s)",
-      "  ✓ should successfully index segmented memory blocks (45ms)",
-      "  ✓ should query associative vectors with high cosine similarity (12ms)",
-      " PASS  tests/agent-routing.test.ts (0.85s)",
-      "  ✓ should fallback to reasoning loop on prompt failure (8ms)",
-      "  ✓ should load regularized MoE layers (120ms)",
-      " PASS  tests/diff-merger.test.ts (0.42s)",
-      "  ✓ should safely parse unified diff patches (5ms)",
-      "  ✓ should apply diff line replacements with no overlap (14ms)",
-      "Test Suites: 3 passed, 3 total",
-      "Tests:       6 passed, 6 total",
-      "Snapshots:   0 total",
-      "Time:        2.84s, estimated 3.0s",
-      "Ran all test suites.",
-      "✔ Jest unit suite passed successfully.",
-    ]
-
-    let idx = 0
-    const interval = setInterval(() => {
-      if (idx < steps.length) {
-        setTerminalLines((prev) => [...prev, steps[idx]])
-        idx++
-      } else {
-        clearInterval(interval)
-        setIsRunningTask(false)
-      }
-    }, 150)
-  }, [isRunningTask])
+    runRealCommand("npm test")
+  }, [runRealCommand])
 
   const clearTerminal = useCallback(() => {
-    setTerminalLines(["sharrowkyn-core ~ bash", "$ cleared console", "→ System ready. Awaiting input."])
+    setTerminalLines(["sharrowkin-core ~ bash", "$ cleared console", "→ System ready. Awaiting input."])
   }, [])
 
   const handleCommandSubmit = useCallback(async (e: React.FormEvent) => {
@@ -162,10 +124,8 @@ export function ChatShell() {
 
     setIsRunningTask(true)
 
-    setIsRunningTask(true)
-
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/terminal", {
+      const response = await fetch(`${BACKEND_URL}/api/terminal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ command: cmd }),
@@ -256,7 +216,7 @@ export function ChatShell() {
             {
               id: "onboarding-1",
               role: "assistant",
-              content: "Welcome to your Field Workspace. I'm ready to help you coordinate, construct, and optimize **sharrowkyn-core** modules.",
+              content: "Welcome to your Field Workspace. I'm ready to help you coordinate, construct, and optimize **sharrowkin-core** modules.",
               createdAt: new Date(),
             }
           ]
@@ -372,12 +332,13 @@ export function ChatShell() {
 
       // Fetch via WebSocket to our autonomous agent backend!
       try {
-        const ws = new WebSocket("ws://127.0.0.1:8000/ws/agent")
+        const ws = new WebSocket(`${WS_URL}/ws/agent`)
         
         ws.onopen = () => {
           ws.send(JSON.stringify({
             task: content.trim(),
-            workspace_path: "c:\\Users\\danik\\Documents\\Field"
+            workspace_path: "",
+            model: selectedModel,
           }))
           
           updateSteps([
@@ -416,6 +377,17 @@ export function ChatShell() {
               updateSteps(newSteps)
               setTerminalLines(prev => [...prev, `➔ Transitioned to phase: ${data.phase.toUpperCase()}`])
               
+            } else if (data.type === "thinking") {
+              // Show agent's thinking/reasoning in the chat
+              const thinkingText = data.content || ""
+              setMessages(prev => prev.map(msg => {
+                if (msg.id === assistantMessage.id) {
+                  return { ...msg, thinkingText: (msg as any).thinkingText ? (msg as any).thinkingText + "\n" + thinkingText : thinkingText }
+                }
+                return msg
+              }))
+              setTerminalLines(prev => [...prev, `💭 ${thinkingText}`])
+              
             } else if (data.type === "log") {
               setTerminalLines(prev => [...prev, `[${data.level?.toUpperCase() || 'INFO'}] ${data.message}`])
               
@@ -431,13 +403,23 @@ export function ChatShell() {
                 `[TEST] Run complete. Success: ${data.success}`,
               ])
               
-            } else if (data.type === "success") {
-              updateSteps(currentSteps.map(s => ({ ...s, status: "done", description: "Finished." })))
-              fullResponse += `\n**Task completed successfully.** Your workspace has been updated.`
-              updateContent(fullResponse)
-              setIsStreaming(false)
-              setTerminalLines(prev => [...prev, `✔ Autonomous run complete.`])
-              ws.close()
+            } else if (data.type === "content") {
+              // Direct content from agent (e.g. conversational reply)
+              fullResponse += data.content || ""
+              updateContent(data.content || "")
+              
+            } else if (data.type === "status") {
+              if (data.status === "done") {
+                updateSteps(currentSteps.map(s => ({ ...s, status: "done", description: "Finished." })))
+                setIsStreaming(false)
+                setTerminalLines(prev => [...prev, `✔ Autonomous run complete.`])
+                ws.close()
+              } else if (data.status === "error" || data.status === "needs_key") {
+                updateSteps(currentSteps.map(s => s.status === "running" ? { ...s, status: "error", description: data.status === "needs_key" ? "API key required" : "Error" } : s))
+                setIsStreaming(false)
+                setTerminalLines(prev => [...prev, `✖ Status: ${data.status}`])
+                ws.close()
+              }
               
             } else if (data.type === "error") {
               updateSteps(currentSteps.map(s => s.status === "running" ? { ...s, status: "error", description: data.message } : s))

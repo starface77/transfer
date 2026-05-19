@@ -19,13 +19,13 @@ async def test():
     print(f"Connecting to {uri}...")
     
     async with websockets.connect(uri) as ws:
-        payload = {"task": "ку", "workspace_path": r"c:\Users\danik\Documents\Field"}
+        payload = {"task": "изучай проект", "workspace_path": r"c:\Users\danik\Documents\Field"}
         print(f"Sending: {json.dumps(payload, ensure_ascii=False)}")
         await ws.send(json.dumps(payload))
         
         while True:
             try:
-                msg = await asyncio.wait_for(ws.recv(), timeout=30)
+                msg = await asyncio.wait_for(ws.recv(), timeout=120)
                 data = json.loads(msg)
                 print(f"  RECV: {json.dumps(data, ensure_ascii=False, indent=2)}")
                 

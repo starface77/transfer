@@ -27,6 +27,79 @@ class GeneratedPatch:
     commands: list[str]
 
 
+def _get_response_text(response: requests.Response) -> str:
+    content_type = response.headers.get("content-type", "")
+    if "text/event-stream" in content_type:
+        chunks = []
+        for line in response.iter_lines():
+            if line:
+                line_str = line.decode("utf-8").strip()
+                if line_str.startswith("data:"):
+                    data_content = line_str[5:].strip()
+                    if data_content == "[DONE]":
+                        continue
+                    try:
+                        data_json = json.loads(data_content)
+                        # OpenAI format
+                        if "choices" in data_json and len(data_json["choices"]) > 0:
+                            delta = data_json["choices"][0].get("delta", {})
+                            if "content" in delta:
+                                chunks.append(delta["content"])
+                        # Anthropic format
+                        elif "type" in data_json:
+                            t = data_json["type"]
+                            if t == "content_block_delta":
+                                delta = data_json.get("delta", {})
+                                if delta.get("type") == "text_delta":
+                                    chunks.append(delta.get("text", ""))
+                            elif t == "completion":
+                                chunks.append(data_json.get("completion", ""))
+                    except Exception:
+                        pass
+        return "".join(chunks)
+    else:
+        # Standard JSON parsing
+        try:
+            data = response.json()
+        except Exception:
+            body_text = response.text or ""
+            if "event: " in body_text or "data: " in body_text:
+                chunks = []
+                for line in body_text.splitlines():
+                    line = line.strip()
+                    if line.startswith("data:"):
+                        data_str = line[5:].strip()
+                        if data_str == "[DONE]":
+                            continue
+                        try:
+                            chunk_data = json.loads(data_str)
+                            if isinstance(chunk_data, dict):
+                                if "delta" in chunk_data and isinstance(chunk_data["delta"], dict) and "text" in chunk_data["delta"]:
+                                    chunks.append(chunk_data["delta"]["text"])
+                                elif "choices" in chunk_data and len(chunk_data["choices"]) > 0:
+                                    choice = chunk_data["choices"][0]
+                                    if "delta" in choice and isinstance(choice["delta"], dict) and "content" in choice["delta"]:
+                                        chunks.append(choice["delta"]["content"])
+                        except Exception:
+                            pass
+                if chunks:
+                    return "".join(chunks)
+            return body_text
+
+        if isinstance(data, dict) and "error" in data:
+            err = data["error"]
+            err_msg = err.get("message") if isinstance(err, dict) else str(err)
+            raise RuntimeError(f"Proxy returned an error: {err_msg}")
+        
+        if isinstance(data, dict) and "content" in data and len(data["content"]) > 0:
+            return data["content"][0]["text"]
+        elif isinstance(data, dict) and "choices" in data and len(data["choices"]) > 0:
+            return data["choices"][0]["message"]["content"]
+        elif isinstance(data, dict) and "candidates" in data and len(data["candidates"]) > 0:
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        return ""
+
+
 class GeminiConfigurationError(RuntimeError):
     pass
 
@@ -73,7 +146,7 @@ class GeminiClient:
                 "stream": False,
             }
             try:
-                response = requests.post(url, headers=headers, json=payload, timeout=30)
+                response = requests.post(url, headers=headers, json=payload, timeout=90, stream=True)
                 if response.status_code == 404:
                     # Try OpenAI fallback
                     openai_url = f"{base_url}/chat/completions"
@@ -90,20 +163,12 @@ class GeminiClient:
                         "temperature": 0.2,
                         "stream": False,
                     }
-                    openai_response = requests.post(openai_url, headers=openai_headers, json=openai_payload, timeout=30)
+                    openai_response = requests.post(openai_url, headers=openai_headers, json=openai_payload, timeout=90, stream=True)
                     openai_response.raise_for_status()
-                    data = openai_response.json()
-                    return data["choices"][0]["message"]["content"]
+                    return _get_response_text(openai_response)
                 
                 response.raise_for_status()
-                data = response.json()
-                if "content" in data and len(data["content"]) > 0:
-                    return data["content"][0]["text"]
-                elif "choices" in data and len(data["choices"]) > 0:
-                    return data["choices"][0]["message"]["content"]
-                elif "candidates" in data and len(data["candidates"]) > 0:
-                    return data["candidates"][0]["content"]["parts"][0]["text"]
-                return ""
+                return _get_response_text(response)
             except Exception as e:
                 raise RuntimeError(f"Omniroute call failed: {e}")
         else:
@@ -118,7 +183,7 @@ class GeminiClient:
             if system_instruction:
                 payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
             try:
-                response = requests.post(url, json=payload, timeout=30)
+                response = requests.post(url, json=payload, timeout=90)
                 response.raise_for_status()
                 data = response.json()
                 return data["candidates"][0]["content"]["parts"][0]["text"]
@@ -144,23 +209,78 @@ class GeminiClient:
             "ку", "qq", "q", "прив", "даров", "здорова",
         }
         
-        # Check if the entire message (cleaned) matches a greeting pattern
-        if clean in greeting_patterns:
-            print(f"[INTENT] Heuristic match: '{task}' -> conversational")
-            return {"is_conversational": True, "response": None}
+        # Extended conversational patterns (questions about the agent, not coding tasks)
+        conversational_phrases = {
+            "ты тут", "ты здесь", "ты на месте", "ты живой", "ты работаешь",
+            "ты онлайн", "ты готов", "ты слышишь", "алло",
+            "are you there", "are you online", "are you ready",
+            "что умеешь", "что можешь", "что ты делаешь", "чем занят",
+            "расскажи о себе", "помоги", "помогите", "help",
+            "изучил проект", "ты понял", "ты разобрался", "готов работать",
+            "давай работать", "начнем", "поехали", "lets go",
+            "да", "нет", "ок", "окей", "ладно", "хорошо", "понял",
+            "yes", "no", "ok", "okay", "sure", "yep", "nope",
+        }
         
-        # Check if the message starts with a greeting and is short (< 8 words)
+        # Check if the entire message (cleaned) matches a greeting pattern
+        if clean in greeting_patterns or clean in conversational_phrases:
+            print(f"[INTENT] Heuristic match: '{task}' -> conversational")
+            return {"is_conversational": True, "is_informational": False, "response": None}
+        
+        # Check if the message starts with a greeting/conversational phrase and is short
         words = clean.split()
-        if len(words) <= 6 and any(clean.startswith(g) for g in greeting_patterns):
+        all_patterns = greeting_patterns | conversational_phrases
+        if len(words) <= 8 and any(clean.startswith(g) for g in all_patterns):
             print(f"[INTENT] Heuristic prefix match: '{task}' -> conversational")
-            return {"is_conversational": True, "response": None}
+            return {"is_conversational": True, "is_informational": False, "response": None}
+        
+        # Informational/read-only request heuristics (requests to explain, analyze, or study the project)
+        info_keywords = {
+            "изучи", "изучай", "просканируй", "проанализируй", "что за проект", "объясни",
+            "как устроена", "как устроено", "структура", "опиши", "описание", "расскажи про",
+            "explain", "analyze", "describe", "what is this project", "study", "show me", "структуру"
+        }
+        mutate_keywords = {
+            "создай", "напиши", "исправь", "добавь", "удали", "измени",
+            "сделай", "запусти", "установи", "обнови", "рефактор",
+            "create", "write", "fix", "add", "delete", "remove", "change",
+            "make", "run", "install", "update", "refactor", "build", "test",
+            "deploy", "debug", "implement"
+        }
+        
+        has_info = any(k in clean for k in info_keywords)
+        has_mutate = any(k in clean for k in mutate_keywords)
+        if has_info and not has_mutate:
+            print(f"[INTENT] Heuristic match: '{task}' -> informational")
+            return {"is_conversational": False, "is_informational": True, "response": None}
+        
+        # Short messages (<=3 words) without code-related keywords are likely conversational
+        code_keywords = {
+            "создай", "напиши", "исправь", "добавь", "удали", "измени",
+            "сделай", "запусти", "установи", "обнови", "рефактор",
+            "изучи", "изучай", "просканируй", "проанализируй", "проект", "репозиторий",
+            "create", "write", "fix", "add", "delete", "remove", "change",
+            "make", "run", "install", "update", "refactor", "build", "test",
+            "deploy", "debug", "implement", "file", "code", "function",
+            "analyze", "scan", "study",
+            "файл", "код", "функцию", "класс", "модуль", "компонент",
+        }
+        if len(words) <= 3 and not any(w in code_keywords for w in words):
+            print(f"[INTENT] Short non-code message: '{task}' -> conversational")
+            return {"is_conversational": True, "is_informational": False, "response": None}
+        
+        # If LLM is not configured, use heuristic-only fallback
+        if not self.configured:
+            print(f"[INTENT] LLM not configured, defaulting to coding task: '{task}'")
+            return {"is_conversational": False, "is_informational": False, "response": None}
         
         # For ambiguous queries, use LLM classification
         system_instruction = (
-            "You are Sharrowkin, an agentic AI coding assistant. Classify the user query.\n"
-            "Return a JSON object with two keys:\n"
+            "You are Sharrowkin, an expert AI developer agent. Classify the user query.\n"
+            "Return a JSON object with three keys:\n"
             " - 'is_conversational': true if this is a greeting, small talk, or general question NOT about code/files.\n"
-            " - 'response': if is_conversational is true, write a helpful response. Otherwise null.\n"
+            " - 'is_informational': true if this is a request to analyze, study, explain, describe, or find info in the workspace/code, without making any modifications/running tests/creating/deleting/changing code or files.\n"
+            " - 'response': if is_conversational is true, write a helpful response in the user's language. Otherwise null.\n"
             "Return ONLY the raw JSON object, no markdown."
         )
         
@@ -183,13 +303,16 @@ class GeminiClient:
                 text = text[start_idx:end_idx+1].strip()
                 
             parsed = json.loads(text)
-            if isinstance(parsed, dict) and "is_conversational" in parsed:
-                print(f"[INTENT] LLM classified: is_conversational={parsed['is_conversational']}")
-                return parsed
+            if isinstance(parsed, dict):
+                is_conv = parsed.get("is_conversational", False)
+                is_info = parsed.get("is_informational", False)
+                resp = parsed.get("response", None)
+                print(f"[INTENT] LLM classified: is_conversational={is_conv}, is_informational={is_info}")
+                return {"is_conversational": is_conv, "is_informational": is_info, "response": resp}
         except Exception as exc:
             print(f"[INTENT] LLM classification failed: {exc}")
             
-        return {"is_conversational": False, "response": None}
+        return {"is_conversational": False, "is_informational": False, "response": None}
 
     def generate_patch(
         self,
@@ -198,6 +321,7 @@ class GeminiClient:
         workspace_summary: str,
         memory_context: str,
         previous_error: str = "",
+        action_history: list[str] = None,
     ) -> GeneratedPatch:
         if not self.api_key and not self.omniroute_base_url:
             raise GeminiConfigurationError(
@@ -205,7 +329,7 @@ class GeminiClient:
                 "Add one of them to the environment to enable code generation."
             )
 
-        prompt = self._build_prompt(task, workspace_summary, memory_context, previous_error)
+        prompt = self._build_prompt(task, workspace_summary, memory_context, previous_error, action_history)
         
         # If Omniroute proxy is configured, route via Anthropic Messages API
         if self.omniroute_base_url:
@@ -240,7 +364,7 @@ class GeminiClient:
             max_retries = 3
             for attempt in range(max_retries):
                 try:
-                    response = requests.post(url, headers=headers, json=payload, timeout=90)
+                    response = requests.post(url, headers=headers, json=payload, timeout=90, stream=True)
                     
                     # Check for 402 Specifically
                     if response.status_code == 402:
@@ -251,62 +375,7 @@ class GeminiClient:
                         )
                     
                     response.raise_for_status()
-                    
-                    body_text = response.text or ""
-                    
-                    # High-res Server-Sent Events (SSE) Auto-Detect Stream Parser
-                    if "event: " in body_text or "data: " in body_text:
-                        chunks = []
-                        for line in body_text.splitlines():
-                            line = line.strip()
-                            if line.startswith("data:"):
-                                data_str = line[5:].strip()
-                                if data_str == "[DONE]":
-                                    continue
-                                try:
-                                    chunk_data = json.loads(data_str)
-                                    if isinstance(chunk_data, dict):
-                                        # Anthropic Stream Schema:
-                                        if "delta" in chunk_data and isinstance(chunk_data["delta"], dict) and "text" in chunk_data["delta"]:
-                                            chunks.append(chunk_data["delta"]["text"])
-                                        # OpenAI Stream Schema:
-                                        elif "choices" in chunk_data and len(chunk_data["choices"]) > 0:
-                                            choice = chunk_data["choices"][0]
-                                            if "delta" in choice and isinstance(choice["delta"], dict) and "content" in choice["delta"]:
-                                                chunks.append(choice["delta"]["content"])
-                                except Exception:
-                                    pass
-                        if chunks:
-                            text = "".join(chunks)
-                            return parse_generated_patch(text)
-                    
-                    # Normal JSON Parsing
-                    try:
-                        data = response.json()
-                    except json.JSONDecodeError:
-                        raise GeminiConfigurationError(
-                            f"Failed to parse JSON response from Omniroute proxy (status code: {response.status_code}). "
-                            f"The response body was not valid JSON. Response body starts with: {response.text[:400]!r}"
-                        )
-                    
-                    # Check if proxy returned an error payload inside a 200 OK
-                    if isinstance(data, dict) and "error" in data:
-                        err = data["error"]
-                        err_msg = err.get("message") if isinstance(err, dict) else str(err)
-                        raise GeminiConfigurationError(f"Omniroute proxy returned an error: {err_msg}")
-                    
-                    # Robust multi-schema parsing
-                    if isinstance(data, dict) and "content" in data and len(data["content"]) > 0:
-                        text = data["content"][0]["text"]
-                    elif isinstance(data, dict) and "choices" in data and len(data["choices"]) > 0:
-                        text = data["choices"][0]["message"]["content"]
-                    elif isinstance(data, dict) and "candidates" in data and len(data["candidates"]) > 0:
-                        text = data["candidates"][0]["content"]["parts"][0]["text"]
-                    else:
-                        raise GeminiConfigurationError(
-                            f"Omniroute proxy returned an unrecognized JSON structure: {json.dumps(data)[:500]}"
-                        )
-                        
+                    text = _get_response_text(response)
                     return parse_generated_patch(text)
                     
                 except requests.exceptions.HTTPError as e:
@@ -337,7 +406,7 @@ class GeminiClient:
                             "stream": False,  # Explicitly request non-streaming response
                         }
                         try:
-                            openai_response = requests.post(openai_url, headers=openai_headers, json=openai_payload, timeout=90)
+                            openai_response = requests.post(openai_url, headers=openai_headers, json=openai_payload, timeout=90, stream=True)
                             if openai_response.status_code == 402:
                                 raise GeminiConfigurationError(
                                     "Omniroute proxy returned 402 (Payment Required) on fallback. "
@@ -345,55 +414,7 @@ class GeminiClient:
                                     f"Response details: {openai_response.text[:200]}"
                                 )
                             openai_response.raise_for_status()
-                            
-                            openai_body = openai_response.text or ""
-                            
-                            # Fallback SSE Parsing
-                            if "event: " in openai_body or "data: " in openai_body:
-                                chunks = []
-                                for line in openai_body.splitlines():
-                                    line = line.strip()
-                                    if line.startswith("data:"):
-                                        data_str = line[5:].strip()
-                                        if data_str == "[DONE]":
-                                            continue
-                                        try:
-                                            chunk_data = json.loads(data_str)
-                                            if isinstance(chunk_data, dict):
-                                                if "delta" in chunk_data and isinstance(chunk_data["delta"], dict) and "text" in chunk_data["delta"]:
-                                                    chunks.append(chunk_data["delta"]["text"])
-                                                elif "choices" in chunk_data and len(chunk_data["choices"]) > 0:
-                                                    choice = chunk_data["choices"][0]
-                                                    if "delta" in choice and isinstance(choice["delta"], dict) and "content" in choice["delta"]:
-                                                        chunks.append(choice["delta"]["content"])
-                                        except Exception:
-                                            pass
-                                if chunks:
-                                    text = "".join(chunks)
-                                    return parse_generated_patch(text)
-                                    
-                            try:
-                                openai_data = openai_response.json()
-                            except json.JSONDecodeError:
-                                raise GeminiConfigurationError(
-                                    f"Failed to parse JSON response from OpenAI fallback endpoint (status code: {openai_response.status_code}). "
-                                    f"Response body starts with: {openai_response.text[:400]!r}"
-                                )
-                            
-                            if isinstance(openai_data, dict) and "error" in openai_data:
-                                err = openai_data["error"]
-                                err_msg = err.get("message") if isinstance(err, dict) else str(err)
-                                raise GeminiConfigurationError(f"OpenAI fallback returned an error: {err_msg}")
-                            
-                            if isinstance(openai_data, dict) and "choices" in openai_data and len(openai_data["choices"]) > 0:
-                                text = openai_data["choices"][0]["message"]["content"]
-                            elif isinstance(openai_data, dict) and "content" in openai_data and len(openai_data["content"]) > 0:
-                                text = openai_data["content"][0]["text"]
-                            else:
-                                raise GeminiConfigurationError(
-                                    f"OpenAI fallback returned an unrecognized JSON structure: {json.dumps(openai_data)[:500]}"
-                                )
-                                
+                            text = _get_response_text(openai_response)
                             return parse_generated_patch(text)
                         except GeminiConfigurationError:
                             raise
@@ -445,6 +466,7 @@ class GeminiClient:
         workspace_summary: str,
         memory_context: str,
         previous_error: str,
+        action_history: list[str] = None,
     ) -> str:
         sections = [
             "TASK",
@@ -454,6 +476,9 @@ class GeminiClient:
             "RLD AND DSM MEMORY CONTEXT",
             memory_context,
         ]
+        if action_history:
+            formatted_actions = "\n".join(f"- {a}" for a in action_history)
+            sections.extend(["PREVIOUS ACTIONS (DO NOT REPEAT FAILED ACTIONS)", formatted_actions])
         if previous_error:
             sections.extend(["PREVIOUS PYTEST OUTPUT OR PATCH ERROR", previous_error])
         sections.append(
@@ -461,6 +486,102 @@ class GeminiClient:
             "You can specify shell commands in 'commands' if you need to install packages, run scripts, or compile things."
         )
         return "\n\n".join(sections)
+
+
+def repair_truncated_json(s: str) -> str:
+    """Attempts to repair a truncated JSON string by closing opened brackets and braces."""
+    s = s.strip()
+    if not s:
+        return "{}"
+    
+    try:
+        json.loads(s)
+        return s
+    except json.JSONDecodeError:
+        pass
+
+    # Basic repair algorithm for truncated JSON
+    in_string = False
+    escape = False
+    stack = []
+    repaired_chars = []
+    
+    for char in s:
+        if escape:
+            escape = False
+            repaired_chars.append(char)
+            continue
+            
+        if char == '\\':
+            escape = True
+            repaired_chars.append(char)
+            continue
+            
+        if char == '"':
+            in_string = not in_string
+            repaired_chars.append(char)
+            continue
+            
+        if not in_string:
+            if char in '{[':
+                stack.append(char)
+            elif char in '}]':
+                if stack:
+                    top = stack[-1]
+                    if (char == '}' and top == '{') or (char == ']' and top == '['):
+                        stack.pop()
+        
+        repaired_chars.append(char)
+        
+    if in_string:
+        if repaired_chars and repaired_chars[-1] == '\\':
+            repaired_chars.pop()
+        repaired_chars.append('"')
+        
+    temp_str = "".join(repaired_chars).strip()
+    while temp_str and temp_str[-1] in ', \n\t\r':
+        temp_str = temp_str[:-1].strip()
+        
+    new_stack = []
+    in_string = False
+    escape = False
+    for char in temp_str:
+        if escape:
+            escape = False
+            continue
+        if char == '\\':
+            escape = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if not in_string:
+            if char in '{[':
+                new_stack.append(char)
+            elif char in '}]':
+                if new_stack:
+                    new_stack.pop()
+                    
+    suffix = []
+    for bracket in reversed(new_stack):
+        if bracket == '{':
+            suffix.append('}')
+        elif bracket == '[':
+            suffix.append(']')
+            
+    repaired_json = temp_str + "".join(suffix)
+    try:
+        json.loads(repaired_json)
+        return repaired_json
+    except json.JSONDecodeError:
+        for end in ["]}", "}", "]}", '"]}', '"]}"']:
+            try:
+                candidate = temp_str + end
+                json.loads(candidate)
+                return candidate
+            except json.JSONDecodeError:
+                pass
+    return s
 
 
 def parse_generated_patch(raw: str) -> GeneratedPatch:
@@ -483,15 +604,33 @@ def parse_generated_patch(raw: str) -> GeneratedPatch:
             try:
                 parsed = json.loads(candidate)
             except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"Failed to parse JSON even after bracket extraction. "
-                    f"Content: {candidate[:300]!r}. Error: {exc}"
-                )
+                # Last resort: try repairing candidate
+                try:
+                    repaired = repair_truncated_json(candidate)
+                    parsed = json.loads(repaired)
+                except Exception:
+                    raise ValueError(
+                        f"Failed to parse JSON even after bracket extraction. "
+                        f"Content: {candidate[:300]!r}. Error: {exc}"
+                    )
         else:
-            raise ValueError(
-                f"Could not locate a valid JSON block in LLM response. "
-                f"Content: {raw[:300]!r}"
-            )
+            # Maybe the whole text was truncated, try to repair from the start brace '{'
+            start_idx = text.find('{')
+            if start_idx != -1:
+                candidate = text[start_idx:].strip()
+                try:
+                    repaired = repair_truncated_json(candidate)
+                    parsed = json.loads(repaired)
+                except Exception as exc:
+                    raise ValueError(
+                        f"Could not locate a valid JSON block in LLM response. "
+                        f"Content: {raw[:300]!r}. Error: {exc}"
+                    )
+            else:
+                raise ValueError(
+                    f"Could not locate a valid JSON block in LLM response. "
+                    f"Content: {raw[:300]!r}"
+                )
             
     if not isinstance(parsed, dict):
         raise ValueError("LLM response must parse to a JSON object.")

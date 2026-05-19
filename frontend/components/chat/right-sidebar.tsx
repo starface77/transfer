@@ -1,9 +1,10 @@
 "use client"
 
 import React, { useState, useEffect, useCallback } from "react"
-import { Terminal as TerminalIcon, BookOpen, Settings, Cpu, Wifi, ArrowDownToLine } from "lucide-react"
+import { Terminal as TerminalIcon, BookOpen, Settings, Cpu, Wifi, ArrowDownToLine, CheckSquare2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TerminalEmulator } from "./terminal-emulator"
+import { AgentTasks } from "./agent-tasks"
 
 interface RightSidebarProps {
   isOpen: boolean
@@ -42,10 +43,13 @@ export function RightSidebar({
 }: RightSidebarProps) {
   const [activeTab, setActiveTab] = useState<string>("terminal")
 
-  // --- STATS SYSTEM (LIVE DATA) ---
-  const [cpuUsage, setCpuUsage] = useState(24)
-  const [memoryUsage, setMemoryUsage] = useState(0.85) // GB
-  const [networkPing, setNetworkPing] = useState(14) // ms
+  // Backend URL
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000"
+
+  // --- STATS SYSTEM (LIVE DATA from backend) ---
+  const [cpuUsage, setCpuUsage] = useState(0)
+  const [memoryUsage, setMemoryUsage] = useState(0) // GB
+  const [networkPing, setNetworkPing] = useState(0) // ms
 
   // --- APPLE STYLE RESIZING ---
   const [width, setWidth] = useState(320)
@@ -75,29 +79,27 @@ export function RightSidebar({
   }, [width])
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCpuUsage(prev => {
-        const delta = Math.floor(Math.random() * 15) - 7 // +/- 7
-        const next = prev + delta
-        return Math.max(8, Math.min(next, 72)) 
-      })
-      setMemoryUsage(prev => {
-        const delta = (Math.random() * 0.04) - 0.02 
-        const next = prev + delta
-        return Math.max(0.81, Math.min(next, 0.94)) 
-      })
-      setNetworkPing(prev => {
-        const delta = Math.floor(Math.random() * 4) - 2 
-        const next = prev + delta
-        return Math.max(9, Math.min(next, 28)) 
-      })
-    }, 1500)
-
+    const fetchStats = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/stats`)
+        if (res.ok) {
+          const data = await res.json()
+          setCpuUsage(Math.round(data.cpu ?? 0))
+          setMemoryUsage(data.memory_gb ?? 0)
+          setNetworkPing(data.ping ?? 0)
+        }
+      } catch {
+        // Backend not available — keep last values
+      }
+    }
+    fetchStats()
+    const timer = setInterval(fetchStats, 3000)
     return () => clearInterval(timer)
-  }, [])
+  }, [BACKEND_URL])
 
   const tabs = [
     { id: "terminal", label: "Terminal", icon: TerminalIcon },
+    { id: "tasks", label: "Tasks", icon: CheckSquare2 },
     { id: "logs", label: "Logs", icon: BookOpen },
     { id: "info", label: "Info", icon: Settings },
   ]
@@ -107,7 +109,7 @@ export function RightSidebar({
       <aside 
         style={{ width: isOpen ? `${width}px` : "0px" }}
         className={cn(
-          "hidden lg:flex flex-col bg-white overflow-hidden shrink-0 relative select-none",
+          "hidden lg:flex flex-col bg-[#fcfcfc] overflow-hidden shrink-0 relative select-none",
           isOpen && "border-l border-stone-200/60",
           isResizing ? "transition-none" : "transition-all duration-300 ease-in-out"
         )}
@@ -124,7 +126,7 @@ export function RightSidebar({
         )}
 
         {/* Sleek Segmented Control Header */}
-        <div className="px-4 py-3 border-b border-stone-200/60 bg-white shrink-0">
+        <div className="px-4 py-3 border-b border-stone-200/60 bg-transparent shrink-0">
           <div className="flex bg-stone-100 p-0.5 rounded-xl">
             {tabs.map((tab) => {
               const IconComponent = tab.icon
@@ -149,8 +151,8 @@ export function RightSidebar({
           </div>
         </div>
 
-        {/* Content Area - Clean White */}
-        <div className="flex-1 overflow-y-auto no-scrollbar bg-white">
+        {/* Content Area - Clean Background */}
+        <div className="flex-1 overflow-y-auto no-scrollbar bg-transparent">
           
           {/* TERMINAL VIEW */}
           {activeTab === "terminal" && (
@@ -208,9 +210,16 @@ export function RightSidebar({
             </div>
           )}
 
+          {/* TASKS VIEW - Integrated Todo Manager */}
+          {activeTab === "tasks" && (
+            <div className="h-full bg-stone-50/20">
+              <AgentTasks />
+            </div>
+          )}
+
           {/* LOGS VIEW - Ultra-Sleek Accent Bar Layout */}
           {activeTab === "logs" && (
-            <div className="p-0 bg-white">
+            <div className="p-0 bg-transparent">
               <div className="border-b border-stone-200/60 px-5 py-3 flex items-center justify-between">
                 <span className="text-[11px] font-medium text-stone-400 uppercase tracking-widest font-sans">Event Stream</span>
                 <span className="relative flex h-2 w-2">

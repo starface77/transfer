@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import sys
 import os
+import subprocess
+import shlex
 
-# Fix Windows cp1251 stdout encoding — prevents UnicodeEncodeError in print()
+# Fix stdout encoding
 if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
@@ -21,22 +23,36 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-# Setup pathing
-REPO_ROOT = Path(__file__).resolve().parent.parent
-BACKEND_DIR = REPO_ROOT / "backend"
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
+# Setup pathing — BACKEND_DIR is the directory containing this file
+BACKEND_DIR = Path(__file__).resolve().parent
+REPO_ROOT = BACKEND_DIR.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-# Import integrations paths
-for relative in ("integrations/semanticgit/src", "integrations/lazystandup/src"):
-    candidate = REPO_ROOT / relative
+# Import integrations & memory paths (they live inside BACKEND_DIR)
+for relative in (
+    "integrations/semanticgit/src",
+    "integrations/lazystandup/src",
+    "memory/rld/src",
+    "memory/dsm/src",
+):
+    candidate = BACKEND_DIR / relative
     if candidate.exists() and str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
 from backend.agent import PHASES, SharrowkinAgent
-from cognition.fieldscript.fieldscript_v1 import FieldScript
+
+try:
+    from cognition.fieldscript.fieldscript_v1 import FieldScript
+except ImportError:
+    FieldScript = None
 
 app = FastAPI(title="Sharrowkin Unified Cognitive Backend", version="0.1.0")
 
@@ -49,13 +65,17 @@ app.add_middleware(
 )
 
 # Persistent global cognitive agent instance (FieldScript)
-cognitive_agent = FieldScript(dim=256)
+cognitive_agent = FieldScript(dim=256) if FieldScript is not None else None
 
 PATCH_DECISION = {"status": "idle", "message": "No patch decision recorded yet."}
 
 
+# Default workspace: env var > home directory
+_DEFAULT_WORKSPACE = os.getenv("WORKSPACE_PATH", str(Path.home()))
+
+
 class SettingsState:
-    workspace_path: str = "c:\\Users\\danik\\Documents\\Field"
+    workspace_path: str = _DEFAULT_WORKSPACE
     github_username: str = ""
     github_token: str = ""
     connected_repos: list[dict] = []
@@ -102,7 +122,8 @@ def update_settings(req: SettingsUpdateRequest):
     return {"status": "success", "workspace_path": SETTINGS.workspace_path}
 
 
-import urllib.parse
+import urllib.parse as _urllib_parse
+
 
 @app.post("/api/git/connect")
 def connect_git(req: ConnectRepoRequest):
@@ -128,7 +149,7 @@ def connect_git(req: ConnectRepoRequest):
         if repo_name.endswith(".git"):
             repo_name = repo_name[:-4]
             
-        target_dir = Path("c:\\Users\\danik\\Documents\\Field\\projects") / repo_name
+        target_dir = Path(SETTINGS.workspace_path) / "projects" / repo_name
         
         # Build authenticated URL
         clone_url = repo_url
@@ -183,80 +204,119 @@ def health() -> dict[str, object]:
 async def chat_endpoint(request: Request):
     data = await request.json()
     messages = data.get("messages", [])
-    
+    model = data.get("model", "")
+
     if not messages:
         return {"response": "No messages received."}
-        
+
     last_user_message = next((m for m in reversed(messages) if m["role"] == "user"), None)
     if not last_user_message:
         return {"response": "No user message found."}
-        
+
     content = last_user_message["content"]
-    
-    # 1. Capture the internal reasoning logs (stdout)
-    f = io.StringIO()
-    with contextlib.redirect_stdout(f):
-        print(f"\n[RECEPTION] User input: {content}")
-        # Observe the input
-        cognitive_agent.observe(content)
-        # Reason and find meaning
-        cognitive_agent.reason(depth=12)
-        # Find memory analogies
-        cognitive_agent.recall("user conversation context")
-        # Stabilize
-        cognitive_agent.stabilize()
-        # Commit to vector space
-        cognitive_agent.commit("Processed user interaction.")
-    
-    logs = f.getvalue()
-    
-    # 2. Build the detailed response incorporating the cognitive trace
-    response_text = f"NARE-Field Analysis Complete.\n\n```log\n{logs}\n```\n\nThe cognitive cycle successfully processed your input: '{content}'. Memory deltas have been updated and system energy stabilized."
-    
+
+    # Run through the cognitive agent if available
+    logs = ""
+    if cognitive_agent is not None:
+        f = io.StringIO()
+        with contextlib.redirect_stdout(f):
+            print(f"\n[RECEPTION] User input: {content}")
+            cognitive_agent.observe(content)
+            cognitive_agent.reason(depth=12)
+            cognitive_agent.recall("user conversation context")
+            cognitive_agent.stabilize()
+            cognitive_agent.commit("Processed user interaction.")
+        logs = f.getvalue()
+
+    # Generate an actual LLM response via the agent's Gemini client
+    from backend.agent import SharrowkinAgent
+    try:
+        agent = SharrowkinAgent()
+        response_text = agent.gemini.generate_text(
+            content,
+            "You are Sharrowkin, a helpful AI coding assistant. "
+            "Respond concisely and helpfully. Use markdown for code. "
+            "Answer in the same language the user writes in."
+        )
+    except Exception as exc:
+        response_text = f"LLM error: {exc}"
+
     return {"response": response_text, "logs": logs}
+
+
+# Dangerous commands that must never be executed
+_BLOCKED_COMMANDS = {"rm -rf /", "rm -rf /*", "mkfs", "dd if=", ":(){:|:&};:", "shutdown", "reboot", "halt", "poweroff"}
 
 
 @app.post("/api/terminal")
 async def terminal_endpoint(request: Request):
     data = await request.json()
     command = data.get("command", "").strip()
-    
+
+    if not command:
+        return {"output": []}
+
     normalized_cmd = command.lower()
-    output = []
-    
-    if normalized_cmd == "dsm status":
-        output = [
-            "→ MoE vector space connected: stable",
-            "→ 12,408 Memory chunks active",
-            "→ Trace context cleared. Inference energy: 0.045",
-            "✔ DSM fully operational."
-        ]
-    elif normalized_cmd.startswith("agent start"):
-        output = [
-            "[INFO] Booting Sharrowkin autonomous protocol...",
-            "[INFO] Syncing weights to FieldScript (dim=256)...",
-            "→ System active. Delta prediction engine online."
-        ]
-    elif normalized_cmd == "clear":
-        pass
-    else:
-        # Default fallback: try to run as local terminal commands or fallback gracefully
-        output = [f"bash: command not found: {command}"]
-        
-    return {"output": output}
+    if normalized_cmd == "clear":
+        return {"output": []}
+
+    # Safety check
+    for blocked in _BLOCKED_COMMANDS:
+        if blocked in normalized_cmd:
+            return {"output": [f"⛔ Command blocked for safety: {command}"]}
+
+    workspace = Path(SETTINGS.workspace_path)
+    if not workspace.exists():
+        workspace = Path.home()
+
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            cwd=str(workspace),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=60,
+        )
+        lines = result.stdout.strip().split("\n") if result.stdout.strip() else []
+        if result.returncode != 0:
+            lines.append(f"[exit code {result.returncode}]")
+        return {"output": lines}
+    except subprocess.TimeoutExpired:
+        return {"output": [f"⏰ Command timed out after 60s: {command}"]}
+    except Exception as e:
+        return {"output": [f"❌ Error: {e}"]}
 
 
 @app.get("/api/stats")
 async def stats_endpoint():
-    # Return simulated real-time stats
+    if psutil is not None:
+        cpu = psutil.cpu_percent(interval=0.1)
+        mem = psutil.virtual_memory()
+        memory_gb = round(mem.used / (1024 ** 3), 2)
+    else:
+        cpu = 0
+        memory_gb = 0.0
+
+    # Measure network latency to Gemini API (simple proxy for "ping")
+    ping_ms = 0
+    try:
+        import urllib.request
+        start = time.time()
+        urllib.request.urlopen("https://generativelanguage.googleapis.com", timeout=3)
+        ping_ms = int((time.time() - start) * 1000)
+    except Exception:
+        ping_ms = -1
+
     return {
-        "cpu": 24,
-        "memory_gb": 0.85,
-        "ping": 14,
+        "cpu": cpu,
+        "memory_gb": memory_gb,
+        "ping": ping_ms,
         "routines": [
-            {"name": "Associative Indexer", "active": True},
-            {"name": "MoE Routing Protocol", "active": True},
-            {"name": "Trace Context Resolver", "active": False}
+            {"name": "LLM Client", "active": True},
+            {"name": "Memory Bridge (DSM/RLD)", "active": True},
+            {"name": "Workspace Scanner", "active": True},
         ]
     }
 
@@ -310,8 +370,6 @@ def accept_patch(request: PatchDecisionRequest) -> dict[str, object]:
     PATCH_DECISION["message"] = request.note or f"Accepted patch for {request.workspace_path}."
     return PATCH_DECISION
 
-
-import subprocess
 
 @app.get("/api/git/changes")
 def get_git_changes():
@@ -369,19 +427,6 @@ def get_git_changes():
                 "original": original.strip() or "// Original file content",
                 "modified": modified.strip() or "// Modified file content"
             })
-            
-        # Fallback if git status is empty
-        if not files:
-            files = [
-                {
-                    "name": "components/chat/left-sidebar.tsx",
-                    "status": "modified",
-                    "additions": 4,
-                    "deletions": 4,
-                    "original": '              { icon: Zap, label: "Automations", href: "/automations" },',
-                    "modified": '              { icon: Settings, label: "Settings", href: "/settings" },'
-                }
-            ]
             
         return [
             {
@@ -485,13 +530,47 @@ async def agent_socket(websocket: WebSocket) -> None:
         payload = await websocket.receive_json()
         task = payload.get("task", "") if isinstance(payload, dict) else ""
         workspace_path = payload.get("workspace_path", "") if isinstance(payload, dict) else ""
-        if not isinstance(task, str) or not isinstance(workspace_path, str) or not task or not workspace_path:
-            await websocket.send_json({"type": "error", "message": "task and workspace_path are required"})
+        model = payload.get("model", "") if isinstance(payload, dict) else ""
+
+        print(f"[WS] Received: task={task!r}, workspace_path={workspace_path!r}, model={model!r}")
+
+        # Use configured workspace if none provided or if a Windows path is sent
+        if not workspace_path or workspace_path.startswith("c:\\") or workspace_path.startswith("C:\\"):
+            workspace_path = SETTINGS.workspace_path
+
+        if not isinstance(task, str) or not task:
+            await websocket.send_json({"type": "error", "message": "task is required"})
             await websocket.close()
             return
-        agent = SharrowkinAgent()
-        async for event in agent.run(task, workspace_path):
-            await websocket.send_json(event)
-        await websocket.close()
+
+        # Ensure workspace exists
+        ws_path = Path(workspace_path)
+        if not ws_path.exists():
+            ws_path.mkdir(parents=True, exist_ok=True)
+
+        print(f"[WS] Using workspace: {workspace_path}")
+
+        try:
+            agent = SharrowkinAgent()
+            async for event in agent.run(task, workspace_path):
+                await websocket.send_json(event)
+        except Exception as exc:
+            print(f"[WS] Agent error: {exc}")
+            try:
+                await websocket.send_json({"type": "error", "message": str(exc)})
+            except Exception:
+                pass
+
+        try:
+            await websocket.close()
+        except Exception:
+            pass
     except WebSocketDisconnect:
         return
+    except Exception as exc:
+        print(f"[WS] Unhandled error: {exc}")
+        try:
+            await websocket.send_json({"type": "error", "message": f"Server error: {exc}"})
+            await websocket.close()
+        except Exception:
+            pass

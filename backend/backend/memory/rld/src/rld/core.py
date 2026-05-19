@@ -9,11 +9,17 @@ from dsm.memory import DynamicSegmentedMemory
 from dsm.models import RouteResult
 from dsm.storage import JsonStorage
 
+import os
+
 logger = logging.getLogger("rld")
 
 
 def default_embedding_model() -> EmbeddingModel:
     """Try neural encoder first, fall back to hash."""
+    if os.getenv("SHARROWKIN_USE_NEURAL") != "1":
+        logger.info("RLD: Neural embeddings not enabled via SHARROWKIN_USE_NEURAL. Defaulting to HashEmbeddingModel.")
+        return HashEmbeddingModel()
+
     try:
         import socket
         orig_timeout = socket.getdefaulttimeout()

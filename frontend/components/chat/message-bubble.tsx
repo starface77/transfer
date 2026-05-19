@@ -37,13 +37,28 @@ export function MessageBubble({ message, isStreaming = false, onOpenDiff }: Mess
     return (
       <div className="flex w-full gap-4 max-w-3xl mx-auto items-start py-5 group animate-in fade-in duration-300">
         
-        {/* Simple elegant orb for Agent */}
-        <div className="w-7 h-7 rounded-full bg-transparent flex items-center justify-center shrink-0 mt-0.5">
-          <Sparkles strokeWidth={1.5} className="w-4 h-4 text-stone-400" />
+        {/* Sharrowkin Logo Avatar */}
+        <div className="w-8 h-8 flex items-center justify-center shrink-0 mt-0.5">
+          <Image 
+            src="/images/logo.png" 
+            alt="Sharrowkin" 
+            width={28} 
+            height={28} 
+            quality={100}
+            priority
+            unoptimized
+            className="object-contain drop-shadow-sm" 
+          />
         </div>
 
-        <div className="flex flex-col flex-1 min-w-0 gap-4">
+        <div className="flex flex-col flex-1 min-w-0 gap-3.5">
           
+          {/* Agent Name Header */}
+          <div className="flex items-center gap-2">
+            <span className="text-[14px] font-bold text-stone-800 tracking-tight leading-none">Sharrowkin</span>
+            <span className="text-[11px] font-medium text-stone-500 bg-stone-100 border border-stone-200/50 px-1.5 py-0.5 rounded-md leading-none mt-0.5 tracking-tight">Agent</span>
+          </div>
+
           {/* Feather-Light Agent Activity Timeline */}
           {hasSteps && (
             <div className="w-full max-w-[500px]">
@@ -120,6 +135,15 @@ export function MessageBubble({ message, isStreaming = false, onOpenDiff }: Mess
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Live Agent Thinking Stream */}
+          {(message as any).thinkingText && (
+            <div className="w-full max-w-[500px] mb-1">
+              <div className="text-[12px] text-stone-400 font-mono leading-relaxed whitespace-pre-wrap border-l-2 border-stone-200 pl-3 py-1">
+                {(message as any).thinkingText}
+              </div>
             </div>
           )}
 

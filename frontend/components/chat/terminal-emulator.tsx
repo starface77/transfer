@@ -50,8 +50,8 @@ export function TerminalEmulator({
         setCurrentInput(cmd)
       }
     }
-    window.addEventListener("sharrowkyn-terminal-cmd", handleCommandClickEvent)
-    return () => window.removeEventListener("sharrowkyn-terminal-cmd", handleCommandClickEvent)
+    window.addEventListener("sharrowkin-terminal-cmd", handleCommandClickEvent)
+    return () => window.removeEventListener("sharrowkin-terminal-cmd", handleCommandClickEvent)
   }, [setCurrentInput])
 
   // Intercept command submissions to update localStorage "Recent Commands" dynamically!
@@ -59,15 +59,15 @@ export function TerminalEmulator({
     e.preventDefault()
     if (currentInput.trim()) {
       const typed = currentInput.trim()
-      const stored = localStorage.getItem("sharrowkyn-recent-commands")
+      const stored = localStorage.getItem("sharrowkin-recent-commands")
       let commands = stored ? JSON.parse(stored) : []
       
       // Keep only unique, place new one at start, limit to 4
       commands = [typed, ...commands.filter((c: string) => c !== typed)].slice(0, 4)
-      localStorage.setItem("sharrowkyn-recent-commands", JSON.stringify(commands))
+      localStorage.setItem("sharrowkin-recent-commands", JSON.stringify(commands))
       
       // Dispatch update notification event so LeftSidebar refreshes instantly
-      window.dispatchEvent(new Event("sharrowkyn-commands-updated"))
+      window.dispatchEvent(new Event("sharrowkin-commands-updated"))
     }
     onSubmitCommand(e)
   }, [currentInput, onSubmitCommand])
@@ -106,7 +106,7 @@ export function TerminalEmulator({
             <div className="w-[1px] h-3 bg-stone-200 shrink-0 mx-1" />
             <div className="flex items-center gap-2">
               <GripHorizontal size={13} className="text-stone-400 hover:text-stone-600 transition-colors cursor-grab" />
-              <span className="text-[10px] text-stone-400 font-mono tracking-wide">danik@sharrowkyn ~ bash</span>
+              <span className="text-[10px] text-stone-400 font-mono tracking-wide">danik@sharrowkin ~ bash</span>
             </div>
           </div>
           

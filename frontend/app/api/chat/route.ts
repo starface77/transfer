@@ -1,89 +1,47 @@
-import { streamText } from "ai"
-
 /**
  * POST /api/chat
  *
- * This route handler proxies requests to the Vercel AI Gateway.
- * It receives messages from the frontend and streams the AI response back.
+ * Proxies chat requests to the Sharrowkin Python backend.
+ * Falls back to the backend's /api/chat endpoint which uses the
+ * configured LLM (Gemini / Omniroute / etc.).
  */
 export async function POST(req: Request) {
   try {
-    const { messages, model } = await req.json()
+    const body = await req.json()
+    const { messages, model } = body
 
     if (!messages || !Array.isArray(messages)) {
-      return new Response(JSON.stringify({ error: "Invalid request: messages array required" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      })
+      return new Response(
+        JSON.stringify({ error: "Invalid request: messages array required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      )
     }
 
-    const selectedModel = model || "google/gemini-3.1-pro"
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000"
 
-    const lastIndex = messages.length - 1
-    const transformedMessages = messages.map(
-      (m: { role: string; content: string; imageData?: string }, index: number) => {
-        // Only process image for the last user message
-        const isLastUserMessage = index === lastIndex && m.role === "user"
-
-        if (isLastUserMessage && m.imageData && m.imageData.startsWith("data:image/")) {
-          // For the current message with an image, use multimodal content format
-          return {
-            role: m.role as "user" | "assistant",
-            content: [
-              {
-                type: "image" as const,
-                image: m.imageData,
-              },
-              {
-                type: "text" as const,
-                text: m.content || "Describe this image in detail.",
-              },
-            ],
-          }
-        }
-
-        // For all other messages (history), use text only
-        // If there was an image, mention it in the text
-        let textContent = m.content
-        if (m.imageData && !isLastUserMessage) {
-          textContent = m.content || "[User shared an image]"
-        }
-
-        return {
-          role: m.role as "user" | "assistant",
-          content: textContent,
-        }
-      },
-    )
-
-    // Filter out any messages with empty content
-    const validMessages = transformedMessages.filter((m: { content: string | object[] }) => {
-      if (typeof m.content === "string") {
-        return m.content.trim().length > 0
-      }
-      return true // Keep multimodal messages
+    const response = await fetch(`${backendUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages, model: model || "" }),
     })
 
-    if (validMessages.length === 0) {
-      return new Response(JSON.stringify({ error: "No valid messages to process" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      })
+    if (!response.ok) {
+      const errorText = await response.text()
+      return new Response(
+        JSON.stringify({ error: `Backend error: ${errorText}` }),
+        { status: response.status, headers: { "Content-Type": "application/json" } },
+      )
     }
 
-    const result = streamText({
-      model: selectedModel,
-      messages: validMessages,
-      system: `You are a helpful, friendly AI assistant. You provide clear, concise, and accurate responses. 
-When explaining code or technical concepts, use markdown formatting with code blocks where appropriate.
-Be conversational but professional. If you're unsure about something, say so honestly.
-When analyzing images, describe them in detail and answer any questions about them.`,
-    })
+    const data = await response.json()
+    const responseText = data.response || data.content || "No response from backend."
 
-    return result.toTextStreamResponse()
+    return new Response(responseText, {
+      status: 200,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    })
   } catch (error) {
-    console.error("Chat API error:", error)
-
+    console.error("Chat API proxy error:", error)
     return new Response(
       JSON.stringify({
         error: error instanceof Error ? error.message : "An unexpected error occurred",

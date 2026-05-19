@@ -17,18 +17,18 @@ import { AnimatedOrb } from "./animated-orb"
 import { AudioWaveform } from "./audio-waveform"
 
 export type AIModel =
-  | "google/gemini-3.1-pro"
-  | "google/gemini-3.1-flash"
-  | "openai/gpt-5.5"
+  | "google/gemini-2.5-flash"
+  | "google/gemini-2.5-pro"
+  | "openai/gpt-4o"
   | "openai/o3-mini"
-  | "anthropic/claude-4.7-opus"
+  | "anthropic/claude-sonnet-4"
 
 export const AI_MODELS: { id: AIModel; name: string; icon: string }[] = [
-  { id: "google/gemini-3.1-pro", name: "Gemini 3.1 Pro", icon: "/images/google.webp" },
-  { id: "google/gemini-3.1-flash", name: "Gemini 3.1 Flash", icon: "/images/google.webp" },
-  { id: "openai/gpt-5.5", name: "GPT-5.5 Flagship", icon: "/images/gpt.png" },
+  { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash", icon: "/images/google.webp" },
+  { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", icon: "/images/google.webp" },
+  { id: "openai/gpt-4o", name: "GPT-4o", icon: "/images/gpt.png" },
   { id: "openai/o3-mini", name: "o3-mini Reasoning", icon: "/images/gpt.png" },
-  { id: "anthropic/claude-4.7-opus", name: "Claude 4.7 Opus", icon: "/images/claude.svg" },
+  { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4", icon: "/images/claude.svg" },
 ]
 
 interface ComposerProps {
@@ -124,10 +124,12 @@ export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel,
     setHasAnimated(true)
   }, [])
 
+
+
   const playClickSound = useCallback(() => {
     const audio = new Audio("https://hebbkx1anhila5yf.public.blob.vercel-storage.com/click-FM4Xaa1FJj237591TiZw4yL1fIxdOw.mp3")
     audio.volume = 0.5
-    audio.play().catch(() => {})
+    audio.play().catch(() => { })
   }, [])
 
   const toggleRecording = useCallback(() => {
@@ -169,6 +171,18 @@ export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel,
       textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`
     }
   }, [])
+
+  useEffect(() => {
+    const handleInsertPrompt = (e: Event) => {
+      const customEvent = e as CustomEvent<string>
+      if (customEvent.detail) {
+        setValue((prev) => (prev ? prev + "\n\n" + customEvent.detail : customEvent.detail))
+        setTimeout(() => handleInput(), 0)
+      }
+    }
+    window.addEventListener("sharrowkin-insert-prompt", handleInsertPrompt)
+    return () => window.removeEventListener("sharrowkin-insert-prompt", handleInsertPrompt)
+  }, [handleInput])
 
   const handleSend = useCallback(() => {
     if ((!value.trim() && !uploadedImage) || isStreaming || disabled) return
@@ -226,16 +240,16 @@ export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel,
   const SelectedIcon = selectedModeObj.icon
 
   return (
-    <div 
+    <div
       className={cn("absolute left-0 right-0 px-4 pointer-events-none z-10 transition-all duration-300", hasAnimated && "composer-intro")}
       style={{ bottom: bottomOffset !== undefined ? `${bottomOffset}px` : "24px" }}
     >
       <div className="relative max-w-3xl mx-auto pointer-events-auto">
         <div
           className={cn(
-            "flex flex-col bg-white border border-stone-200/60 transition-all duration-300 relative rounded-[28px] overflow-hidden",
-            "focus-within:border-stone-300 focus-within:shadow-[0_4px_24px_rgba(0,0,0,0.06)]",
-            "shadow-[0_2px_12px_rgba(0,0,0,0.03)]"
+            "flex flex-col bg-white border border-stone-300/80 transition-all duration-300 relative rounded-[28px] overflow-hidden",
+            "focus-within:border-stone-400 focus-within:shadow-md",
+            "shadow-[0_2px_16px_rgba(0,0,0,0.06)]"
           )}
         >
           {/* Uploaded Image Preview */}
@@ -272,7 +286,7 @@ export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel,
                 handleInput()
               }}
               onKeyDown={handleKeyDown}
-              placeholder={isRecording ? "Listening..." : "Message Sharrowkyn..."}
+              placeholder={isRecording ? "Listening..." : "Message sharrowkin..."}
               disabled={isStreaming || disabled}
               rows={1}
               className={cn(
@@ -287,7 +301,7 @@ export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel,
           {/* Bottom Toolbar */}
           <div className="flex items-center justify-between px-3 pb-3 pt-1">
             <div className="flex items-center gap-1">
-              
+
               {/* Attachment Button */}
               <Button
                 onClick={() => {
@@ -375,7 +389,7 @@ export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel,
                   <AudioWaveform isRecording={isRecording} stream={mediaStream} />
                 </div>
               )}
-              
+
               {/* Mic Button */}
               <Button
                 onClick={toggleRecording}
@@ -411,17 +425,21 @@ export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel,
                   />
                 </button>
               ) : (
-                <div className="flex items-center gap-1 shrink-0 bg-stone-50 border border-stone-200/40 rounded-full p-0.5 shadow-sm">
+                <div className="flex items-center gap-1 shrink-0 bg-stone-50 border border-stone-200/100 rounded-full p-0.5 shadow-sm">
                   {/* Dropdown trigger */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
                         onClick={playClickSound}
-                        className="h-8 px-2.5 rounded-full text-stone-600 hover:bg-stone-100/60 flex items-center gap-1 font-medium text-[12.5px] transition-colors"
+                        className="uiverse-button group outline-none"
                       >
-                        <SelectedIcon className="w-3.5 h-3.5 text-stone-500" />
-                        <span>{selectedModeObj.title}</span>
-                        <ChevronDown className="w-3 h-3 text-stone-400" />
+                        <div className="uiverse-blob1"></div>
+                        <div className="uiverse-blob2"></div>
+                        <div className="uiverse-inner font-medium text-[12.5px] transition-colors">
+                          <SelectedIcon className="w-3.5 h-3.5 text-white/90" />
+                          <span className="text-white drop-shadow-sm">{selectedModeObj.title}</span>
+                          <ChevronDown className="w-3 h-3 text-white/70" />
+                        </div>
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent
