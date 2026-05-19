@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useSearchParams } from "next/navigation"
-import { MessageSquareDashed, ArrowDownToLine } from "lucide-react"
+import { MessageSquareDashed, ArrowDownToLine, Activity, Database, GitBranch, Server, Timer, WifiOff, AlertTriangle, RotateCcw } from "lucide-react"
 import { MessageList } from "./message-list"
 import { Composer, type AIModel } from "./composer"
 import { Button } from "@/components/ui/button"
@@ -51,6 +51,104 @@ export interface Message {
   toolSteps?: ToolStep[]
   taskPlan?: TaskPlan[]  // Hierarchical task plan
   debugAnalysis?: DebugAnalysis  // Error analysis from debugger
+  thinkingText?: string
+}
+
+export type AgentStatus = "idle" | "connecting" | "running" | "thinking" | "stabilizing" | "done" | "error" | "stopped"
+export type PhaseStatus = "pending" | "running" | "done" | "error"
+
+export interface AgentState {
+  status: AgentStatus
+  phase?: string
+  message?: string
+  startedAt?: string
+  updatedAt?: string
+  runtimeMs?: number
+}
+
+export interface AgentPhase {
+  id: string
+  label: string
+  status: PhaseStatus
+  description?: string
+  startedAt?: string
+  completedAt?: string
+}
+
+export interface ProjectIntelligence {
+  status: "unknown" | "warming" | "ready" | "stale" | "error"
+  workspacePath?: string
+  filesIndexed?: number
+  symbols?: number
+  cacheHitRate?: number
+  lastIndexedAt?: string
+  summary?: string
+}
+
+export interface ToolActivity {
+  id: string
+  name: string
+  status: "queued" | "running" | "done" | "error"
+  message?: string
+  target?: string
+  startedAt?: string
+  durationMs?: number
+}
+
+export interface ContextStatus {
+  usedTokens?: number
+  maxTokens?: number
+  percent?: number
+  status?: "healthy" | "compact" | "near_limit" | "overflow" | "unknown"
+  cache?: "cold" | "warming" | "ready" | "stale"
+}
+
+export interface DiffStatus {
+  filename?: string
+  status: "none" | "proposed" | "accepted" | "rejected"
+  filesChanged?: number
+  additions?: number
+  deletions?: number
+}
+
+export interface TestStatus {
+  status: "idle" | "running" | "passed" | "failed"
+  command?: string
+  message?: string
+  passed?: number
+  failed?: number
+  durationMs?: number
+}
+
+export interface RuntimeHint {
+  id: string
+  label: string
+  value: string
+  tone?: "neutral" | "good" | "warning" | "error"
+}
+
+const DEFAULT_PHASES: AgentPhase[] = [
+  { id: "observe", label: "Observe", status: "pending", description: "Map workspace and request intent" },
+  { id: "recall", label: "Recall", status: "pending", description: "Load project intelligence and cache" },
+  { id: "reason", label: "Reason", status: "pending", description: "Plan edits and tool calls" },
+  { id: "stabilize", label: "Stabilize", status: "pending", description: "Run checks and recover errors" },
+  { id: "commit", label: "Finalize", status: "pending", description: "Prepare patch and summary" },
+]
+
+function normalizePhaseName(phase?: string) {
+  return (phase || "").toString().toLowerCase().replace(/\s+/g, "_")
+}
+
+function formatDuration(ms?: number) {
+  if (!ms || ms < 0) return "—"
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  const seconds = Math.round(ms / 1000)
+  if (seconds < 60) return `${seconds}s`
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+}
+
+function parseNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
 
 // localStorage key for persisting messages
@@ -61,6 +159,110 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
 }
 
+function AgentWorkspaceHeader({
+  agentState,
+  phases,
+  projectIntelligence,
+  contextStatus,
+  selectedModel,
+  backendConnected,
+  backendUrl,
+  runtimeHints,
+  diffStatus,
+  testStatus,
+  onRetry,
+  onReset,
+}: {
+  agentState: AgentState
+  phases: AgentPhase[]
+  projectIntelligence: ProjectIntelligence
+  contextStatus: ContextStatus
+  selectedModel: AIModel
+  backendConnected: boolean
+  backendUrl: string
+  runtimeHints: RuntimeHint[]
+  diffStatus: DiffStatus
+  testStatus: TestStatus
+  onRetry: () => void
+  onReset: () => void
+}) {
+  const runningPhase = phases.find((phase) => phase.status === "running")
+  const completedCount = phases.filter((phase) => phase.status === "done").length
+  const contextPercent = contextStatus.percent ?? (contextStatus.usedTokens && contextStatus.maxTokens ? Math.round((contextStatus.usedTokens / contextStatus.maxTokens) * 100) : undefined)
+  const stateTone = agentState.status === "error" ? "text-red-600 bg-red-50 border-red-100" : agentState.status === "done" ? "text-emerald-700 bg-emerald-50 border-emerald-100" : agentState.status === "running" || agentState.status === "thinking" || agentState.status === "stabilizing" ? "text-stone-800 bg-white border-stone-200" : "text-stone-500 bg-stone-50 border-stone-200"
+
+  return (
+    <div className="absolute top-4 left-16 right-4 z-10 pointer-events-none">
+      <div className="max-w-4xl mx-auto pointer-events-auto rounded-2xl border border-stone-200/70 bg-white/90 backdrop-blur-xl shadow-[0_8px_30px_rgba(0,0,0,0.045)] px-4 py-3">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={cn("h-8 w-8 rounded-full border flex items-center justify-center shrink-0", stateTone)}>
+              {backendConnected ? <Activity size={15} strokeWidth={1.5} className={cn((agentState.status === "running" || agentState.status === "thinking") && "animate-pulse")} /> : <WifiOff size={15} strokeWidth={1.5} />}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-[13px] font-semibold text-stone-850 tracking-tight truncate">{agentState.message || (runningPhase ? `${runningPhase.label} in progress` : "Workspace ready")}</span>
+                <span className="text-[10px] font-medium text-stone-400 uppercase tracking-wider shrink-0">{agentState.status}</span>
+              </div>
+              <div className="flex items-center gap-2 mt-1 text-[11px] text-stone-400 min-w-0">
+                <Server size={12} strokeWidth={1.5} className="shrink-0" />
+                <span className="truncate">{backendConnected ? backendUrl.replace(/^https?:\/\//, "") : "backend disconnected"}</span>
+                <span className="text-stone-300">•</span>
+                <span className="truncate">{selectedModel}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="hidden xl:flex items-center gap-2 shrink-0">
+            <div className="px-2.5 py-1.5 rounded-xl bg-stone-50 border border-stone-200/70 flex items-center gap-2">
+              <Database size={13} strokeWidth={1.5} className="text-stone-400" />
+              <span className="text-[11px] text-stone-500">{projectIntelligence.status}</span>
+              {typeof projectIntelligence.filesIndexed === "number" && <span className="text-[11px] font-mono text-stone-400">{projectIntelligence.filesIndexed} files</span>}
+            </div>
+            <div className="px-2.5 py-1.5 rounded-xl bg-stone-50 border border-stone-200/70 flex items-center gap-2">
+              <Timer size={13} strokeWidth={1.5} className="text-stone-400" />
+              <span className="text-[11px] text-stone-500">{formatDuration(agentState.runtimeMs)}</span>
+            </div>
+            {(diffStatus.status !== "none" || testStatus.status !== "idle") && (
+              <div className="px-2.5 py-1.5 rounded-xl bg-stone-50 border border-stone-200/70 flex items-center gap-2">
+                <GitBranch size={13} strokeWidth={1.5} className="text-stone-400" />
+                <span className="text-[11px] text-stone-500">{diffStatus.status !== "none" ? `${diffStatus.filesChanged ?? 0} files` : "no diff"}</span>
+                <span className={cn("text-[11px]", testStatus.status === "passed" ? "text-emerald-600" : testStatus.status === "failed" ? "text-red-600" : "text-stone-400")}>{testStatus.status}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button onClick={onRetry} className="h-7 px-2.5 rounded-lg hover:bg-stone-100 text-[11px] text-stone-500 transition-colors flex items-center gap-1.5">
+              <RotateCcw size={12} strokeWidth={1.5} />
+              Retry
+            </button>
+            <button onClick={onReset} className="h-7 px-2.5 rounded-lg hover:bg-stone-100 text-[11px] text-stone-500 transition-colors">Reset</button>
+          </div>
+        </div>
+
+        <div className="mt-3 flex items-center gap-2">
+          {phases.map((phase, index) => (
+            <div key={phase.id} className="flex items-center gap-2 flex-1 min-w-0">
+              <div className={cn("h-1.5 flex-1 rounded-full transition-colors", phase.status === "done" ? "bg-stone-800" : phase.status === "running" ? "bg-stone-400 animate-pulse" : phase.status === "error" ? "bg-red-300" : "bg-stone-100")} />
+              {index < phases.length - 1 && <span className="text-stone-200 text-[10px]">/</span>}
+            </div>
+          ))}
+          <span className="text-[10px] font-mono text-stone-400 shrink-0">{completedCount}/{phases.length}</span>
+        </div>
+
+        {(contextPercent !== undefined || runtimeHints.length > 0 || agentState.status === "error") && (
+          <div className="mt-2 flex items-center gap-3 text-[11px] text-stone-400 overflow-hidden">
+            {contextPercent !== undefined && <span className="shrink-0">context {contextPercent}% · cache {contextStatus.cache || projectIntelligence.status}</span>}
+            {runtimeHints.slice(0, 2).map((hint) => <span key={hint.id} className={cn("truncate", hint.tone === "warning" && "text-amber-600", hint.tone === "error" && "text-red-600", hint.tone === "good" && "text-emerald-600")}>{hint.label}: {hint.value}</span>)}
+            {agentState.status === "error" && <span className="flex items-center gap-1 text-red-600 shrink-0"><AlertTriangle size={12} strokeWidth={1.5} /> recoverable</span>}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function ChatShell() {
   const searchParams = useSearchParams()
   const activeSessionId = searchParams?.get("session") || "session-1"
@@ -69,12 +271,26 @@ export function ChatShell() {
   const [messages, setMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [abortController, setAbortController] = useState<AbortController | null>(null)
+  const socketRef = useRef<WebSocket | null>(null)
+  const startedAtRef = useRef<number | null>(null)
   const [selectedModel, setSelectedModel] = useState<AIModel>("google/gemini-2.5-flash")
   const [isLoaded, setIsLoaded] = useState(false)
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true)
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true)
   const [activeDiffFile, setActiveDiffFile] = useState<string | null>(null)
+  const [lastDiffContent, setLastDiffContent] = useState("")
+  const [agentState, setAgentState] = useState<AgentState>({ status: "idle", message: "Workspace ready" })
+  const [agentPhases, setAgentPhases] = useState<AgentPhase[]>(DEFAULT_PHASES)
+  const [projectIntelligence, setProjectIntelligence] = useState<ProjectIntelligence>({ status: "unknown" })
+  const [toolActivity, setToolActivity] = useState<ToolActivity[]>([])
+  const [contextStatus, setContextStatus] = useState<ContextStatus>({ status: "unknown", cache: "cold" })
+  const [runtimeHints, setRuntimeHints] = useState<RuntimeHint[]>([])
+  const [diffStatus, setDiffStatus] = useState<DiffStatus>({ status: "none" })
+  const [testStatus, setTestStatus] = useState<TestStatus>({ status: "idle" })
+
+  const backendConnected = agentState.status !== "error" || !error
+
+  const workspacePath = useMemo(() => projectIntelligence.workspacePath || "active workspace", [projectIntelligence.workspacePath])
 
   // --- LIFTED TERMINAL EMULATOR STATE ---
   const [terminalLines, setTerminalLines] = useState<string[]>([
@@ -258,6 +474,49 @@ export function ChatShell() {
     localStorage.setItem(MODEL_STORAGE_KEY, model)
   }, [])
 
+  const resetAgentWorkspace = useCallback(() => {
+    socketRef.current?.close()
+    socketRef.current = null
+    startedAtRef.current = null
+    setIsStreaming(false)
+    setError(null)
+    setAgentState({ status: "idle", message: "Workspace ready" })
+    setAgentPhases(DEFAULT_PHASES)
+    setToolActivity([])
+    setContextStatus({ status: "unknown", cache: projectIntelligence.status === "ready" ? "ready" : "cold" })
+    setRuntimeHints([])
+    setDiffStatus({ status: "none" })
+    setTestStatus({ status: "idle" })
+  }, [projectIntelligence.status])
+
+  const setPhaseStatus = useCallback((phase: string, status: PhaseStatus, description?: string) => {
+    const normalized = normalizePhaseName(phase)
+    const phaseIndex = DEFAULT_PHASES.findIndex((item) => item.id === normalized)
+    const now = new Date().toISOString()
+
+    setAgentPhases((prev) => {
+      const source = prev.length ? prev : DEFAULT_PHASES
+      return source.map((item, index) => {
+        if (phaseIndex >= 0) {
+          if (index < phaseIndex) return { ...item, status: item.status === "error" ? "error" : "done", completedAt: item.completedAt || now }
+          if (index === phaseIndex) return { ...item, status, description: description || item.description, startedAt: item.startedAt || now, completedAt: status === "done" ? now : item.completedAt }
+          return status === "error" && index === phaseIndex ? { ...item, status: "error" } : item
+        }
+        if (item.id === normalized) return { ...item, status, description: description || item.description, startedAt: item.startedAt || now }
+        return item
+      })
+    })
+  }, [])
+
+  const appendToolActivity = useCallback((activity: Omit<ToolActivity, "id" | "startedAt"> & { id?: string; startedAt?: string }) => {
+    const entry: ToolActivity = {
+      ...activity,
+      id: activity.id || generateId(),
+      startedAt: activity.startedAt || new Date().toISOString(),
+    }
+    setToolActivity((prev) => [entry, ...prev.filter((item) => item.id !== entry.id)].slice(0, 40))
+  }, [])
+
   // Send a message to the AI
   const sendMessage = useCallback(
     async (content: string, imageData?: string) => {
@@ -286,6 +545,14 @@ export function ChatShell() {
       const newMessages = [...messages, userMessage, assistantMessage]
       setMessages(newMessages)
       setIsStreaming(true)
+      startedAtRef.current = Date.now()
+      setAgentState({ status: "connecting", phase: "connect", message: "Connecting to autonomous backend", startedAt: new Date().toISOString() })
+      setAgentPhases(DEFAULT_PHASES)
+      setToolActivity([])
+      setRuntimeHints([{ id: "model", label: "model", value: selectedModel, tone: "neutral" }])
+      setDiffStatus({ status: "none" })
+      setTestStatus({ status: "idle" })
+      appendToolActivity({ name: "Open agent websocket", status: "running", message: "Negotiating live workspace channel" })
 
       // --- REAL STREAMING VIA WEBSOCKET TO BACKEND AGENT ---
       let currentSteps: ToolStep[] = [
@@ -313,7 +580,9 @@ export function ChatShell() {
 
       // Fetch via WebSocket to our autonomous agent backend!
       try {
+        socketRef.current?.close()
         const ws = new WebSocket(`${WS_URL}/ws/agent`)
+        socketRef.current = ws
         
         ws.onopen = () => {
           ws.send(JSON.stringify({
@@ -325,6 +594,10 @@ export function ChatShell() {
           updateSteps([
             { id: "observe", name: "Observe (AST Workspace Analysis)", status: "running", description: "Scanning active project files..." }
           ])
+          setAgentState({ status: "running", phase: "observe", message: "Observing workspace", startedAt: new Date(startedAtRef.current || Date.now()).toISOString(), updatedAt: new Date().toISOString() })
+          setPhaseStatus("observe", "running", "Scanning active project files")
+          appendToolActivity({ name: "Autonomous run", status: "running", message: content.trim(), target: workspacePath })
+          setProjectIntelligence((prev) => ({ ...prev, status: prev.status === "ready" ? "ready" : "warming" }))
           setTerminalLines(prev => [...prev, "", `[AGENT] Task started: "${content.trim()}"`])
         }
         
@@ -356,6 +629,9 @@ export function ChatShell() {
                 }
               }
               updateSteps(newSteps)
+              setAgentState((prev) => ({ ...prev, status: currentPhaseKey === "stabilize" ? "stabilizing" : "running", phase: currentPhaseKey, message: `${phaseNames[currentPhaseKey] || currentPhaseKey} active`, updatedAt: new Date().toISOString(), runtimeMs: startedAtRef.current ? Date.now() - startedAtRef.current : prev.runtimeMs }))
+              setPhaseStatus(currentPhaseKey, "running", data.message || "Active cognitive phase")
+              appendToolActivity({ name: phaseNames[currentPhaseKey] || currentPhaseKey, status: "running", message: data.message || "Phase transition" })
               setTerminalLines(prev => [...prev, `➔ Transitioned to phase: ${data.phase.toUpperCase()}`])
               
             } else if (data.type === "thinking") {
@@ -363,10 +639,12 @@ export function ChatShell() {
               const thinkingText = data.content || ""
               setMessages(prev => prev.map(msg => {
                 if (msg.id === assistantMessage.id) {
-                  return { ...msg, thinkingText: (msg as any).thinkingText ? (msg as any).thinkingText + "\n" + thinkingText : thinkingText }
+                  return { ...msg, thinkingText: msg.thinkingText ? msg.thinkingText + "\n" + thinkingText : thinkingText }
                 }
                 return msg
               }))
+              setAgentState((prev) => ({ ...prev, status: "thinking", message: thinkingText.slice(0, 120) || "Reasoning", updatedAt: new Date().toISOString(), runtimeMs: startedAtRef.current ? Date.now() - startedAtRef.current : prev.runtimeMs }))
+              appendToolActivity({ name: "Reasoning", status: "running", message: thinkingText.slice(0, 180) })
               setTerminalLines(prev => [...prev, `💭 ${thinkingText}`])
 
             } else if (data.type === "task_plan") {
@@ -378,6 +656,7 @@ export function ChatShell() {
                 }
                 return msg
               }))
+              appendToolActivity({ name: "Execution plan", status: "done", message: `${plan.length} top-level tasks` })
               setTerminalLines(prev => [...prev, `📋 Execution plan generated: ${plan.length} top-level tasks`])
 
             } else if (data.type === "task_update") {
@@ -405,6 +684,7 @@ export function ChatShell() {
               }))
 
             } else if (data.type === "log") {
+              appendToolActivity({ name: data.tag || data.level || "log", status: data.level === "error" ? "error" : "done", message: data.message })
               setTerminalLines(prev => [...prev, `[${data.level?.toUpperCase() || 'INFO'}] ${data.message}`])
 
             } else if (data.type === "debug_analysis") {
@@ -426,6 +706,8 @@ export function ChatShell() {
                 return msg
               }))
 
+              setAgentState((prev) => ({ ...prev, status: "error", message: debugInfo.errorMessage || debugInfo.errorType, updatedAt: new Date().toISOString(), runtimeMs: startedAtRef.current ? Date.now() - startedAtRef.current : prev.runtimeMs }))
+              appendToolActivity({ name: "Recoverable error", status: "error", message: debugInfo.rootCause || debugInfo.errorMessage, target: debugInfo.filePath })
               setTerminalLines(prev => [
                 ...prev,
                 `🐛 Error Analysis: ${debugInfo.errorType}`,
@@ -435,20 +717,75 @@ export function ChatShell() {
 
             } else if (data.type === "diff" || data.type === "patch_proposed") {
               const diffText = data.diff || ""
+              const additions = diffText.split("\n").filter((line: string) => line.startsWith("+") && !line.startsWith("+++")).length
+              const deletions = diffText.split("\n").filter((line: string) => line.startsWith("-") && !line.startsWith("---")).length
+              const filesChanged = Array.isArray(data.files) ? data.files.length : undefined
+              setLastDiffContent(diffText)
+              setDiffStatus({ filename: "agent-patch.diff", status: "proposed", filesChanged, additions, deletions })
+              appendToolActivity({ name: "Patch proposed", status: "done", message: `${filesChanged ?? 0} file(s), +${additions}/-${deletions}` })
               setTerminalLines(prev => [...prev, `✔ Patch generated: ${(data.files || []).length} file(s) changed`])
               if (diffText) {
                 setTerminalLines(prev => [...prev, ...diffText.split("\n").slice(0, 30)])
               }
               // Store diff content and trigger diff viewer
               setActiveDiffFile("agent-patch.diff")
-              ;(window as any).__sharrowkin_last_diff = diffText
               
             } else if (data.type === "test_result") {
+              const passed = data.success === true
+              setTestStatus({ status: passed ? "passed" : "failed", command: data.command, message: data.message, passed: parseNumber(data.passed), failed: parseNumber(data.failed), durationMs: parseNumber(data.duration_ms ?? data.durationMs) })
+              appendToolActivity({ name: "Test verification", status: passed ? "done" : "error", message: data.message || `Success: ${data.success}` })
               setTerminalLines(prev => [
                 ...prev, 
                 `[TEST] Run complete. Success: ${data.success}`,
               ])
               
+            } else if (data.type === "agent_state") {
+              setAgentState((prev) => ({
+                ...prev,
+                status: data.status || prev.status,
+                phase: data.phase || prev.phase,
+                message: data.message || data.detail || prev.message,
+                updatedAt: data.updated_at || new Date().toISOString(),
+                runtimeMs: parseNumber(data.runtime_ms ?? data.runtimeMs) ?? (startedAtRef.current ? Date.now() - startedAtRef.current : prev.runtimeMs),
+              }))
+              if (data.phase) setPhaseStatus(data.phase, data.status === "error" ? "error" : data.status === "done" ? "done" : "running", data.message)
+
+            } else if (data.type === "project_intelligence") {
+              setProjectIntelligence((prev) => ({
+                ...prev,
+                status: data.status || prev.status || "unknown",
+                workspacePath: data.workspace_path || data.workspacePath || prev.workspacePath,
+                filesIndexed: parseNumber(data.files_indexed ?? data.filesIndexed) ?? prev.filesIndexed,
+                symbols: parseNumber(data.symbols) ?? prev.symbols,
+                cacheHitRate: parseNumber(data.cache_hit_rate ?? data.cacheHitRate) ?? prev.cacheHitRate,
+                lastIndexedAt: data.last_indexed_at || data.lastIndexedAt || prev.lastIndexedAt,
+                summary: data.summary || prev.summary,
+              }))
+              appendToolActivity({ name: "Project intelligence", status: data.status === "error" ? "error" : "done", message: data.summary || data.status })
+
+            } else if (data.type === "tool_activity") {
+              appendToolActivity({
+                id: data.id,
+                name: data.name || data.tool || "Tool activity",
+                status: data.status || "running",
+                message: data.message || data.detail,
+                target: data.target || data.path,
+                durationMs: parseNumber(data.duration_ms ?? data.durationMs),
+              })
+
+            } else if (data.type === "context_status") {
+              setContextStatus({
+                usedTokens: parseNumber(data.used_tokens ?? data.usedTokens),
+                maxTokens: parseNumber(data.max_tokens ?? data.maxTokens),
+                percent: parseNumber(data.percent ?? data.percentage),
+                status: data.status || "unknown",
+                cache: data.cache,
+              })
+
+            } else if (data.type === "runtime_hint" || data.type === "performance_hint") {
+              const hint: RuntimeHint = { id: data.id || generateId(), label: data.label || data.name || "hint", value: String(data.value || data.message || ""), tone: data.tone || "neutral" }
+              setRuntimeHints((prev) => [hint, ...prev.filter((item) => item.id !== hint.id)].slice(0, 6))
+
             } else if (data.type === "content") {
               // Direct content from agent (e.g. conversational reply)
               fullResponse += data.content || ""
@@ -457,11 +794,17 @@ export function ChatShell() {
             } else if (data.type === "status") {
               if (data.status === "done") {
                 updateSteps(currentSteps.map(s => ({ ...s, status: "done", description: "Finished." })))
+                setAgentPhases((prev) => prev.map((phase) => ({ ...phase, status: phase.status === "error" ? "error" : "done", completedAt: phase.completedAt || new Date().toISOString() })))
+                setAgentState((prev) => ({ ...prev, status: "done", message: "Autonomous run complete", updatedAt: new Date().toISOString(), runtimeMs: startedAtRef.current ? Date.now() - startedAtRef.current : prev.runtimeMs }))
+                appendToolActivity({ name: "Autonomous run", status: "done", message: "Complete" })
                 setIsStreaming(false)
                 setTerminalLines(prev => [...prev, `✔ Autonomous run complete.`])
                 ws.close()
               } else if (data.status === "error" || data.status === "needs_key") {
                 updateSteps(currentSteps.map(s => s.status === "running" ? { ...s, status: "error", description: data.status === "needs_key" ? "API key required" : "Error" } : s))
+                setAgentState((prev) => ({ ...prev, status: "error", message: data.status === "needs_key" ? "API key required" : "Agent run needs attention", updatedAt: new Date().toISOString(), runtimeMs: startedAtRef.current ? Date.now() - startedAtRef.current : prev.runtimeMs }))
+                setPhaseStatus(agentState.phase || "reason", "error", data.status)
+                appendToolActivity({ name: "Agent status", status: "error", message: data.status })
                 setIsStreaming(false)
                 setTerminalLines(prev => [...prev, `✖ Status: ${data.status}`])
                 ws.close()
@@ -470,6 +813,9 @@ export function ChatShell() {
             } else if (data.type === "error") {
               updateSteps(currentSteps.map(s => s.status === "running" ? { ...s, status: "error", description: data.message } : s))
               setError(data.message)
+              setAgentState((prev) => ({ ...prev, status: "error", message: data.message || "Agent error", updatedAt: new Date().toISOString(), runtimeMs: startedAtRef.current ? Date.now() - startedAtRef.current : prev.runtimeMs }))
+              setPhaseStatus(agentState.phase || "reason", "error", data.message)
+              appendToolActivity({ name: "Agent error", status: "error", message: data.message })
               setIsStreaming(false)
               setTerminalLines(prev => [...prev, `✖ Error: ${data.message}`])
               ws.close()
@@ -479,25 +825,30 @@ export function ChatShell() {
           }
         }
         
-        ws.onerror = (err) => {
+        ws.onerror = () => {
           setError("WebSocket error. Could not connect to backend.")
+          setAgentState((prev) => ({ ...prev, status: "error", message: "Backend websocket unavailable", updatedAt: new Date().toISOString(), runtimeMs: startedAtRef.current ? Date.now() - startedAtRef.current : prev.runtimeMs }))
+          appendToolActivity({ name: "WebSocket", status: "error", message: "Could not connect to backend" })
           setIsStreaming(false)
         }
         
         ws.onclose = () => {
-          if (isStreaming) setIsStreaming(false)
+          if (socketRef.current === ws) socketRef.current = null
+          setIsStreaming(false)
         }
         
       } catch (err: any) {
         console.error(err)
         setError(err.message)
+        setAgentState((prev) => ({ ...prev, status: "error", message: err.message || "Connection error", updatedAt: new Date().toISOString(), runtimeMs: startedAtRef.current ? Date.now() - startedAtRef.current : prev.runtimeMs }))
         updateSteps([
           { id: "step-1", name: "Connection Error", status: "error", description: "Could not connect to Python backend. Is it running?" }
         ])
+        appendToolActivity({ name: "Connection error", status: "error", message: "Could not connect to Python backend" })
         setIsStreaming(false)
       }
     },
-    [messages, isStreaming, selectedModel],
+    [messages, isStreaming, selectedModel, appendToolActivity, setPhaseStatus, workspacePath, agentState.phase],
   )
 
   const retry = useCallback(() => {
@@ -512,14 +863,19 @@ export function ChatShell() {
   }, [messages, sendMessage])
 
   const stopStreaming = useCallback(() => {
-    setIsStreaming(false);
-  }, [])
+    socketRef.current?.close()
+    socketRef.current = null
+    setAgentState((prev) => ({ ...prev, status: "stopped", message: "Run stopped by user", updatedAt: new Date().toISOString(), runtimeMs: startedAtRef.current ? Date.now() - startedAtRef.current : prev.runtimeMs }))
+    appendToolActivity({ name: "Run stopped", status: "done", message: "Stopped by user" })
+    setIsStreaming(false)
+  }, [appendToolActivity])
 
   const clearChat = useCallback(() => {
     setMessages([])
     setError(null)
+    resetAgentWorkspace()
     localStorage.removeItem(STORAGE_KEY)
-  }, [])
+  }, [STORAGE_KEY, resetAgentWorkspace])
 
   return (
     <div className="h-dvh bg-background flex overflow-hidden">
@@ -540,6 +896,21 @@ export function ChatShell() {
           >
             <MessageSquareDashed className="w-4 h-4" />
           </Button>
+
+          <AgentWorkspaceHeader
+            agentState={agentState}
+            phases={agentPhases}
+            projectIntelligence={projectIntelligence}
+            contextStatus={contextStatus}
+            selectedModel={selectedModel}
+            backendConnected={backendConnected}
+            backendUrl={BACKEND_URL}
+            runtimeHints={runtimeHints}
+            diffStatus={diffStatus}
+            testStatus={testStatus}
+            onRetry={retry}
+            onReset={clearChat}
+          />
 
           <div className="flex-1 overflow-hidden">
             <MessageList 
@@ -630,8 +1001,10 @@ export function ChatShell() {
           <div className="w-1/2 border-l border-stone-200/60 bg-white flex flex-col overflow-hidden animate-in slide-in-from-right duration-300">
             <DiffViewer
               filename={activeDiffFile}
+              diffContent={lastDiffContent}
               onClose={() => setActiveDiffFile(null)}
               onAccept={() => {
+                setDiffStatus((prev) => ({ ...prev, status: "accepted" }))
                 setActiveDiffFile(null)
               }}
             />
@@ -656,6 +1029,17 @@ export function ChatShell() {
         isDraggingTerminal={isDraggingTerminal}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
+        agentState={agentState}
+        phases={agentPhases}
+        projectIntelligence={projectIntelligence}
+        toolActivity={toolActivity}
+        contextStatus={contextStatus}
+        runtimeHints={runtimeHints}
+        diffStatus={diffStatus}
+        testStatus={testStatus}
+        selectedModel={selectedModel}
+        backendUrl={BACKEND_URL}
+        backendConnected={backendConnected}
       />
     </div>
   )

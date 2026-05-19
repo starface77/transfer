@@ -347,7 +347,7 @@ export function ReviewShell() {
                     <span className="text-[11px] text-stone-400 font-mono">1 file</span>
                   </div>
 
-                  {selectedPR.filesChanged.map((file, idx) => (
+                  {selectedPR.filesChanged.map((file: { name: string; original: string; modified: string }, idx: number) => (
                     <div key={idx} className="border border-stone-200/60 rounded-2xl overflow-hidden shadow-[0_1px_4px_rgba(0,0,0,0.01)] bg-stone-50">
                       <div className="px-4 py-2 bg-stone-100/40 border-b border-stone-200/50 flex items-center gap-2">
                         <FileCode size={13} className="text-stone-400" />

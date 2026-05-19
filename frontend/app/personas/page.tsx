@@ -183,9 +183,7 @@ export default function PersonasPage() {
                       "relative border border-stone-200/60 bg-white rounded-2xl p-5 shadow-[0_1px_8px_rgba(0,0,0,0.01)] transition-all duration-200 text-left group hover:shadow-[0_2px_12px_rgba(0,0,0,0.04)]",
                       isSelected && "ring-2 ring-offset-2"
                     )}
-                    style={{
-                      ringColor: isSelected ? persona.colors.primary : undefined,
-                    }}
+                    style={isSelected ? { borderColor: persona.colors.primary } : undefined}
                   >
                     {/* Selected Badge */}
                     {isSelected && (

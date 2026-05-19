@@ -1,47 +1,92 @@
 "use client"
 
 import React, { useState, useEffect, useCallback } from "react"
-import { Terminal as TerminalIcon, BookOpen, Settings, Cpu, Wifi, ArrowDownToLine, CheckSquare2 } from "lucide-react"
+import { Terminal as TerminalIcon, BookOpen, Settings, Cpu, Wifi, ArrowDownToLine, CheckSquare2, Activity, Database, GitBranch, AlertTriangle, CheckCircle2, CircleDashed, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TerminalEmulator } from "./terminal-emulator"
 import { AgentTasks } from "./agent-tasks"
+import type { AgentState, AgentPhase, ProjectIntelligence, ToolActivity, ContextStatus, RuntimeHint, DiffStatus, TestStatus, PhaseStatus } from "./chat-shell"
+
+function formatDuration(ms?: number) {
+  if (!ms) return "—"
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  const seconds = Math.round(ms / 1000)
+  if (seconds < 60) return `${seconds}s`
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+}
+
+function getPhaseIcon(status: PhaseStatus) {
+  if (status === "running") return <Loader2 size={13} strokeWidth={1.5} className="text-stone-400 animate-spin" />
+  if (status === "done") return <CheckCircle2 size={13} strokeWidth={1.5} className="text-emerald-500/80" />
+  if (status === "error") return <AlertTriangle size={13} strokeWidth={1.5} className="text-red-500/80" />
+  return <CircleDashed size={13} strokeWidth={1.5} className="text-stone-300" />
+}
+
+function getActivityTone(status: ToolActivity["status"]) {
+  if (status === "error") return "bg-red-400"
+  if (status === "done") return "bg-emerald-400"
+  if (status === "running") return "bg-stone-500"
+  return "bg-stone-200"
+}
 
 interface RightSidebarProps {
   isOpen: boolean
   onToggle: () => void
-  terminalLines: string[]
-  isRunningTask: boolean
-  currentInput: string
-  setCurrentInput: (val: string) => void
-  onSubmitCommand: (e: React.FormEvent) => void
-  runBuildCommand: () => void
-  runTestCommand: () => void
-  clearTerminal: () => void
-  terminalDock: "sidebar" | "bottom"
-  setTerminalDock: (dock: "sidebar" | "bottom") => void
-  isDraggingTerminal: boolean
+  terminalLines?: string[]
+  isRunningTask?: boolean
+  currentInput?: string
+  setCurrentInput?: (val: string) => void
+  onSubmitCommand?: (e: React.FormEvent) => void
+  runBuildCommand?: () => void
+  runTestCommand?: () => void
+  clearTerminal?: () => void
+  terminalDock?: "sidebar" | "bottom"
+  setTerminalDock?: (dock: "sidebar" | "bottom") => void
+  isDraggingTerminal?: boolean
   onDragStart?: (e: React.DragEvent) => void
   onDragEnd?: () => void
+  agentState?: AgentState
+  phases?: AgentPhase[]
+  projectIntelligence?: ProjectIntelligence
+  toolActivity?: ToolActivity[]
+  contextStatus?: ContextStatus
+  runtimeHints?: RuntimeHint[]
+  diffStatus?: DiffStatus
+  testStatus?: TestStatus
+  selectedModel?: string
+  backendUrl?: string
+  backendConnected?: boolean
 }
 
 export function RightSidebar({ 
   isOpen, 
   onToggle,
-  terminalLines,
-  isRunningTask,
-  currentInput,
-  setCurrentInput,
-  onSubmitCommand,
-  runBuildCommand,
-  runTestCommand,
-  clearTerminal,
-  terminalDock,
-  setTerminalDock,
-  isDraggingTerminal,
+  terminalLines = ["sharrowkin-core ~ bash", "→ Terminal idle."],
+  isRunningTask = false,
+  currentInput = "",
+  setCurrentInput = () => {},
+  onSubmitCommand = (event: React.FormEvent) => event.preventDefault(),
+  runBuildCommand = () => {},
+  runTestCommand = () => {},
+  clearTerminal = () => {},
+  terminalDock = "sidebar",
+  setTerminalDock = () => {},
+  isDraggingTerminal = false,
   onDragStart,
   onDragEnd,
+  agentState = { status: "idle", message: "Workspace ready" },
+  phases = [],
+  projectIntelligence = { status: "unknown" },
+  toolActivity = [],
+  contextStatus = { status: "unknown" },
+  runtimeHints = [],
+  diffStatus = { status: "none" },
+  testStatus = { status: "idle" },
+  selectedModel = "default",
+  backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000",
+  backendConnected = true,
 }: RightSidebarProps) {
-  const [activeTab, setActiveTab] = useState<string>("terminal")
+  const [activeTab, setActiveTab] = useState<string>("agent")
 
   // Backend URL
   const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000"
@@ -98,6 +143,7 @@ export function RightSidebar({
   }, [BACKEND_URL])
 
   const tabs = [
+    { id: "agent", label: "Agent", icon: Activity },
     { id: "terminal", label: "Terminal", icon: TerminalIcon },
     { id: "tasks", label: "Tasks", icon: CheckSquare2 },
     { id: "logs", label: "Logs", icon: BookOpen },
@@ -154,6 +200,65 @@ export function RightSidebar({
         {/* Content Area - Clean Background */}
         <div className="flex-1 overflow-y-auto no-scrollbar bg-transparent">
           
+          {/* AGENT VIEW */}
+          {activeTab === "agent" && (
+            <div className="p-4 space-y-4">
+              <div className="bg-white border border-stone-200/80 rounded-2xl p-4 shadow-[0_1px_8px_rgba(0,0,0,0.01)]">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-medium text-stone-400 uppercase tracking-widest font-sans">Current State</div>
+                    <div className="text-[14px] font-semibold text-stone-850 mt-1 truncate">{agentState.message || "Workspace ready"}</div>
+                  </div>
+                  <div className={cn("px-2.5 py-1 rounded-full border text-[10px] uppercase tracking-wider font-medium", agentState.status === "error" ? "bg-red-50 border-red-100 text-red-600" : agentState.status === "done" ? "bg-emerald-50 border-emerald-100 text-emerald-700" : agentState.status === "running" || agentState.status === "thinking" || agentState.status === "stabilizing" ? "bg-stone-900 border-stone-900 text-white" : "bg-stone-50 border-stone-200 text-stone-500")}>{agentState.status}</div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="rounded-xl bg-stone-50 border border-stone-100 p-2.5">
+                    <div className="text-[10px] text-stone-400 uppercase tracking-wider">Runtime</div>
+                    <div className="text-[12px] font-mono text-stone-700 mt-1">{formatDuration(agentState.runtimeMs)}</div>
+                  </div>
+                  <div className="rounded-xl bg-stone-50 border border-stone-100 p-2.5">
+                    <div className="text-[10px] text-stone-400 uppercase tracking-wider">Backend</div>
+                    <div className={cn("text-[12px] font-mono mt-1", backendConnected ? "text-emerald-600" : "text-red-600")}>{backendConnected ? "live" : "offline"}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[11px] font-medium text-stone-400 uppercase tracking-widest mb-3 px-1 font-sans">Phase Timeline</div>
+                <div className="bg-white border border-stone-200/80 rounded-2xl p-4 shadow-[0_1px_8px_rgba(0,0,0,0.01)] space-y-3.5">
+                  {phases.map((phase, index) => (
+                    <div key={phase.id} className="relative flex gap-3">
+                      {index < phases.length - 1 && <div className="absolute left-[6px] top-[18px] bottom-[-15px] w-px bg-stone-100" />}
+                      <div className="relative z-10 bg-white pt-0.5">{getPhaseIcon(phase.status)}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className={cn("text-[12.5px] font-medium", phase.status === "running" ? "text-stone-850" : phase.status === "error" ? "text-red-600" : "text-stone-500")}>{phase.label}</div>
+                        <div className="text-[11px] text-stone-400 mt-0.5 leading-relaxed">{phase.description}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[11px] font-medium text-stone-400 uppercase tracking-widest mb-3 px-1 font-sans">Workspace Intelligence</div>
+                <div className="bg-white border border-stone-200/80 rounded-2xl overflow-hidden shadow-[0_1px_8px_rgba(0,0,0,0.01)]">
+                  <div className="flex items-center justify-between p-3.5 border-b border-stone-100">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <Database size={14} strokeWidth={1.5} className="text-stone-400 shrink-0" />
+                      <span className="text-[12.5px] text-stone-600 truncate">Project cache</span>
+                    </div>
+                    <span className="text-[11px] font-mono text-stone-500">{projectIntelligence.status}</span>
+                  </div>
+                  <div className="grid grid-cols-3 divide-x divide-stone-100">
+                    <div className="p-3 text-center"><div className="text-[13px] font-mono text-stone-700">{projectIntelligence.filesIndexed ?? "—"}</div><div className="text-[10px] text-stone-400 mt-0.5">files</div></div>
+                    <div className="p-3 text-center"><div className="text-[13px] font-mono text-stone-700">{projectIntelligence.symbols ?? "—"}</div><div className="text-[10px] text-stone-400 mt-0.5">symbols</div></div>
+                    <div className="p-3 text-center"><div className="text-[13px] font-mono text-stone-700">{contextStatus.percent ?? "—"}</div><div className="text-[10px] text-stone-400 mt-0.5">context %</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* TERMINAL VIEW */}
           {activeTab === "terminal" && (
             <div className="p-4 h-full">
@@ -228,36 +333,29 @@ export function RightSidebar({
                 </span>
               </div>
               <div className="py-2 divide-y divide-stone-50 select-none">
-                {[
-                  { time: "11:43:53", type: "success", tag: "merger", msg: "Applied diff line replacements inside composer.tsx" },
-                  { time: "11:42:01", type: "info", tag: "engine", msg: "Rendered agentic timeline on websocket client" },
-                  { time: "11:41:45", type: "info", tag: "dsm", msg: "Querying dynamic associative vector segments" },
-                  { time: "11:40:44", type: "warning", tag: "router", msg: "Load-balancing load adjustment triggered" },
-                  { time: "11:40:00", type: "info", tag: "system", msg: "Autonomous workspace listener initialized" },
-                ].map((log, i) => (
+                {toolActivity.length === 0 ? (
+                  <div className="px-5 py-8 text-center">
+                    <CircleDashed size={22} strokeWidth={1.5} className="mx-auto text-stone-300 mb-2" />
+                    <div className="text-[12px] text-stone-400">Tool activity will appear here during a run.</div>
+                  </div>
+                ) : toolActivity.map((activity) => (
                   <div 
-                    key={i} 
+                    key={activity.id} 
                     className="px-5 py-2.5 flex items-center gap-3.5 hover:bg-stone-50/70 transition-colors cursor-default"
                   >
-                    {/* Left thin accent line indicator */}
-                    <div 
-                      className={cn(
-                        "w-[3px] h-6 rounded-full shrink-0",
-                        log.type === "success" && "bg-emerald-400",
-                        log.type === "info" && "bg-stone-200",
-                        log.type === "warning" && "bg-amber-400"
-                      )} 
-                    />
+                    <div className={cn("w-[3px] h-6 rounded-full shrink-0", getActivityTone(activity.status))} />
                     
                     <div className="flex-1 min-w-0 flex items-center justify-between gap-4">
                       <div className="flex items-center gap-3 min-w-0">
-                        <span className="text-[11px] font-mono text-stone-300 shrink-0">{log.time}</span>
+                        <span className="text-[11px] font-mono text-stone-300 shrink-0">
+                          {activity.startedAt ? new Date(activity.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--:--:--"}
+                        </span>
                         <span className="text-[12.5px] font-normal text-stone-600 truncate font-sans">
-                          {log.msg}
+                          {activity.message || activity.name}
                         </span>
                       </div>
                       <span className="text-[10px] font-mono text-stone-400 shrink-0 uppercase tracking-wider font-medium">
-                        {log.tag}
+                        {activity.name}
                       </span>
                     </div>
                   </div>
@@ -270,6 +368,38 @@ export function RightSidebar({
           {activeTab === "info" && (
             <div className="p-4 space-y-6">
               
+              <div>
+                <div className="text-[11px] font-medium text-stone-400 uppercase tracking-widest mb-3 px-1 font-sans">Active Workspace</div>
+                <div className="bg-white border border-stone-200/80 rounded-2xl overflow-hidden shadow-[0_1px_8px_rgba(0,0,0,0.01)]">
+                  <div className="p-3.5 border-b border-stone-100 flex items-center justify-between gap-3">
+                    <span className="text-[12.5px] text-stone-600 truncate">Model</span>
+                    <span className="text-[11px] font-mono text-stone-500 truncate max-w-[170px]">{selectedModel}</span>
+                  </div>
+                  <div className="p-3.5 border-b border-stone-100 flex items-center justify-between gap-3">
+                    <span className="text-[12.5px] text-stone-600 truncate">Backend</span>
+                    <span className="text-[11px] font-mono text-stone-500 truncate max-w-[170px]">{backendUrl.replace(/^https?:\/\//, "")}</span>
+                  </div>
+                  <div className="p-3.5 flex items-center justify-between gap-3">
+                    <span className="text-[12.5px] text-stone-600 truncate">Diff / Tests</span>
+                    <span className="text-[11px] font-mono text-stone-500 truncate">{diffStatus.status} · {testStatus.status}</span>
+                  </div>
+                </div>
+              </div>
+
+              {runtimeHints.length > 0 && (
+                <div>
+                  <div className="text-[11px] font-medium text-stone-400 uppercase tracking-widest mb-3 px-1 font-sans">Runtime Hints</div>
+                  <div className="bg-white border border-stone-200/80 rounded-2xl p-3 shadow-[0_1px_8px_rgba(0,0,0,0.01)] space-y-2">
+                    {runtimeHints.map((hint) => (
+                      <div key={hint.id} className="flex items-center justify-between gap-3">
+                        <span className="text-[12px] text-stone-500 truncate">{hint.label}</span>
+                        <span className={cn("text-[11px] font-mono truncate", hint.tone === "good" ? "text-emerald-600" : hint.tone === "warning" ? "text-amber-600" : hint.tone === "error" ? "text-red-600" : "text-stone-400")}>{hint.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Performance Section */}
               <div>
                 <div className="text-[11px] font-medium text-stone-400 uppercase tracking-widest mb-3 px-1 font-sans">System Performance</div>

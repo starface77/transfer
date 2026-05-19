@@ -133,7 +133,7 @@ export function MessageList({ messages, isStreaming, error, onRetry, isLoaded, o
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      className="absolute inset-0 overflow-y-auto pt-16 pb-32 space-y-4 border-none px-6"
+      className="absolute inset-0 overflow-y-auto pt-40 pb-32 space-y-4 border-none px-6"
       role="log"
       aria-label="Chat messages"
       aria-live="polite"

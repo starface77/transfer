@@ -284,10 +284,10 @@ export function MessageBubble({ message, isStreaming = false, onOpenDiff }: Mess
           )}
 
           {/* Live Thinking — subtle left border */}
-          {(message as any).thinkingText && (
+          {message.thinkingText && (
             <div className="w-full max-w-[500px] animate-in fade-in duration-200">
               <div className="text-[12px] text-stone-400 leading-relaxed whitespace-pre-wrap border-l-[1.5px] border-stone-200/80 pl-3 py-1">
-                {(message as any).thinkingText.split("\n").slice(-5).join("\n")}
+                {message.thinkingText.split("\n").slice(-5).join("\n")}
               </div>
             </div>
           )}
