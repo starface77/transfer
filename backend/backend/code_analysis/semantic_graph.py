@@ -82,6 +82,25 @@ class SemanticGraph:
         self.nodes: dict[str, CodeNode] = {}
         self.dsm_path = dsm_path or Path(".sharrowkin/semantic_graph")
         self.dsm_path.mkdir(parents=True, exist_ok=True)
+        self.git_hotspots: list[tuple[str, int]] = []
+        self.recent_commits: list[dict[str, str]] = []
+
+    def get_detected_patterns(self) -> dict[str, list[str]]:
+        """Aggregate detected design patterns from class node metadata."""
+        patterns = {
+            "Singleton": [],
+            "Factory": [],
+            "Builder": [],
+            "Observer": [],
+            "Decorator": []
+        }
+        for node in self.nodes.values():
+            if node.node_type == CodeNodeType.CLASS:
+                node_patterns = node.metadata.get("detected_patterns", [])
+                for p in node_patterns:
+                    if p in patterns:
+                        patterns[p].append(node.id)
+        return patterns
 
     def add_node(self, node: CodeNode) -> None:
         """Add a node to the graph."""
@@ -251,6 +270,8 @@ class SemanticGraph:
         graph_file = self.dsm_path / "semantic_graph.json"
         data = {
             "nodes": {node_id: node.to_dict() for node_id, node in self.nodes.items()},
+            "git_hotspots": self.git_hotspots,
+            "recent_commits": self.recent_commits,
             "metadata": {
                 "total_nodes": len(self.nodes),
                 "timestamp": Path(__file__).stat().st_mtime,
@@ -272,6 +293,8 @@ class SemanticGraph:
         try:
             data = json.loads(graph_file.read_text())
             self.nodes.clear()
+            self.git_hotspots = data.get("git_hotspots", [])
+            self.recent_commits = data.get("recent_commits", [])
 
             for node_id, node_data in data["nodes"].items():
                 node = CodeNode(
@@ -334,13 +357,44 @@ class SemanticGraphBuilder:
     def build_from_directory(self, directory: Path, recursive: bool = True) -> None:
         """Build semantic graph from all Python files in a directory."""
         pattern = "**/*.py" if recursive else "*.py"
+        ignored_dirs = {"venv", "node_modules", "blocksuite", "archive", "media_assets", "memory_dumps", "storage"}
         for file_path in directory.glob(pattern):
+            try:
+                parts = file_path.relative_to(directory).parts
+                if any(p.startswith(".") or p in ignored_dirs for p in parts[:-1]):
+                    continue
+            except Exception:
+                pass
+
             if file_path.name.startswith("__") or file_path.name.startswith("."):
                 continue
 
             relative = file_path.relative_to(directory)
             module_name = str(relative.with_suffix("")).replace("/", ".").replace("\\", ".")
             self.build_from_file(file_path, module_name)
+
+        # Run Git analyzer
+        try:
+            from .git_analyzer import GitAnalyzer
+            git_analyzer = GitAnalyzer(directory)
+            self.graph.git_hotspots = git_analyzer.get_hotspots()
+            self.graph.recent_commits = git_analyzer.get_recent_commits()
+        except Exception as e:
+            print(f"Warning: Could not perform Git analysis: {e}")
+
+        # Run Doc Linker
+        try:
+            from .doc_linker import DocLinker
+            doc_linker = DocLinker(directory)
+            doc_linker.scan_documentation()
+            
+            # Link docs to nodes
+            for node in self.graph.nodes.values():
+                links = doc_linker.get_links_for_symbol(node.id)
+                if links:
+                    node.metadata["doc_links"] = links
+        except Exception as e:
+            print(f"Warning: Could not link documentation: {e}")
 
 
 class SemanticGraphVisitor(ast.NodeVisitor):
@@ -363,10 +417,14 @@ class SemanticGraphVisitor(ast.NodeVisitor):
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         """Handle class definitions."""
         old_class = self.current_class
-        self.current_class = node.name
-
         full_name = self._get_full_name(node.name)
         parent_id = self.module_name if not old_class else f"{self.module_name}.{old_class}"
+
+        # Run pattern detector
+        from .pattern_detector import PatternDetector
+        detector = PatternDetector()
+        detector.analyze_node(node, node.name)
+        detected = [pattern for pattern, classes in detector.detected_patterns.items() if classes]
 
         class_node = CodeNode(
             id=full_name,
@@ -379,9 +437,11 @@ class SemanticGraphVisitor(ast.NodeVisitor):
             parent_id=parent_id,
             is_public=not node.name.startswith("_"),
             decorators=[self._get_decorator_name(d) for d in node.decorator_list],
+            metadata={"detected_patterns": detected}
         )
         self.graph.add_node(class_node)
 
+        self.current_class = node.name
         self.generic_visit(node)
         self.current_class = old_class
 

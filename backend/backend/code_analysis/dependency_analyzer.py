@@ -197,7 +197,15 @@ class DependencyAnalyzer:
     def analyze_directory(self, directory: Path, recursive: bool = True) -> None:
         """Analyze all Python files in a directory."""
         pattern = "**/*.py" if recursive else "*.py"
+        ignored_dirs = {"venv", "node_modules", "blocksuite", "archive", "media_assets", "memory_dumps", "storage"}
         for file_path in directory.glob(pattern):
+            try:
+                parts = file_path.relative_to(directory).parts
+                if any(p.startswith(".") or p in ignored_dirs for p in parts[:-1]):
+                    continue
+            except Exception:
+                pass
+
             if file_path.name.startswith("__") or file_path.name.startswith("."):
                 continue
 

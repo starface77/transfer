@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-import hashlib
 import math
-import re
 from collections.abc import Iterable
 from typing import Protocol
-
-
-TOKEN_RE = re.compile(r"[A-Za-zА-Яа-я0-9_+#.-]+", re.UNICODE)
-
+from backend.memory.common.embedding import tokenize, character_ngrams
 
 class EmbeddingModel(Protocol):
     dim: int
@@ -18,46 +13,18 @@ class EmbeddingModel(Protocol):
 
 
 class HashEmbeddingModel:
-    """Deterministic local semantic-ish encoder with no network dependency."""
+    """Facade for the unified deterministic hash embedding, returning lists for JSON compatibility."""
 
     def __init__(self, dim: int = 384):
-        if dim < 16:
-            raise ValueError("dim must be >= 16")
+        from backend.memory.common.embedding import UnifiedHashEmbeddingModel
         self.dim = dim
+        self._model = UnifiedHashEmbeddingModel(dim=dim)
 
     def encode(self, text: str) -> list[float]:
-        vector = [0.0] * self.dim
-        tokens = tokenize(text)
-        if not tokens:
-            return vector
+        return self._model.encode(text).tolist()
 
-        for token in tokens:
-            digest = hashlib.blake2b(token.encode("utf-8"), digest_size=16).digest()
-            primary = int.from_bytes(digest[:4], "big") % self.dim
-            secondary = int.from_bytes(digest[4:8], "big") % self.dim
-            sign = 1.0 if digest[8] % 2 == 0 else -1.0
-            weight = 1.0 + min(len(token), 16) / 16.0
-            vector[primary] += sign * weight
-            vector[secondary] += sign * 0.35 * weight
-
-            for ngram in character_ngrams(token):
-                nd = hashlib.blake2b(ngram.encode("utf-8"), digest_size=8).digest()
-                idx = int.from_bytes(nd[:4], "big") % self.dim
-                vector[idx] += 0.08 if nd[4] % 2 == 0 else -0.08
-
-        return normalize(vector)
-
-
-def tokenize(text: str) -> list[str]:
-    return [m.group(0).lower() for m in TOKEN_RE.finditer(text or "")]
-
-
-def character_ngrams(token: str, n: int = 3) -> Iterable[str]:
-    if len(token) <= n:
-        yield token
-        return
-    for i in range(len(token) - n + 1):
-        yield token[i : i + n]
+    def encode_batch(self, texts: list[str]) -> list[list[float]]:
+        return self._model.encode_batch(texts).tolist()
 
 
 def normalize(vector: Iterable[float]) -> list[float]:

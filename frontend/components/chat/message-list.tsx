@@ -1,13 +1,11 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import Image from "next/image"
 import { MessageBubble } from "./message-bubble"
 import type { Message } from "./chat-shell"
 import { TypingIndicator } from "./typing-indicator"
-import { AlertCircle, RefreshCw } from "lucide-react"
+import { AlertCircle, Bot, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { AnimatedOrb } from "./animated-orb"
 
 interface MessageListProps {
   messages: Message[]
@@ -18,44 +16,12 @@ interface MessageListProps {
   onOpenDiff?: (filename: string) => void
 }
 
-const LAUNCH_SOUND_URL = "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/launch-SUi0itAGHr1wtvdDYYG5bzFLsIYHtP.mp3"
-
 export function MessageList({ messages, isStreaming, error, onRetry, isLoaded, onOpenDiff }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [autoScroll, setAutoScroll] = useState(true)
   const rafRef = useRef<number | null>(null)
-  const [hasAnimated, setHasAnimated] = useState(false)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
   const lastScrollRef = useRef<number>(0)
-  const hasPlayedIntroRef = useRef(false) // Track if intro has played
-
-  useEffect(() => {
-    if (!isLoaded) return // Wait for localStorage to load
-
-    // Only animate if no messages were loaded (fresh start)
-    if (messages.length === 0 && !hasPlayedIntroRef.current) {
-      setHasAnimated(true)
-      hasPlayedIntroRef.current = true
-
-      audioRef.current = new Audio(LAUNCH_SOUND_URL)
-      audioRef.current.volume = 0.5
-      audioRef.current.play().catch(() => {
-        // Ignore autoplay errors - browser may block without user interaction
-      })
-    } else if (messages.length > 0) {
-      // Skip animation if messages exist
-      setHasAnimated(false)
-      hasPlayedIntroRef.current = true
-    }
-
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current = null
-      }
-    }
-  }, [isLoaded, messages.length])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -124,7 +90,7 @@ export function MessageList({ messages, isStreaming, error, onRetry, isLoaded, o
   if (!isLoaded) {
     return (
       <div className="absolute inset-0 flex items-center justify-center">
-        <AnimatedOrb size={64} />
+        <div className="h-6 w-6 rounded-full border border-stone-200 border-t-stone-500 animate-spin" />
       </div>
     )
   }
@@ -133,7 +99,7 @@ export function MessageList({ messages, isStreaming, error, onRetry, isLoaded, o
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      className="absolute inset-0 overflow-y-auto pt-40 pb-32 space-y-4 border-none px-6"
+      className="absolute inset-0 overflow-y-auto pt-8 pb-32 space-y-4 border-none px-6"
       role="log"
       aria-label="Chat messages"
       aria-live="polite"
@@ -141,22 +107,14 @@ export function MessageList({ messages, isStreaming, error, onRetry, isLoaded, o
       {/* Empty state */}
       {messages.length === 0 && !error && !isStreaming && (
         <div className="flex flex-col items-center justify-center h-full text-center text-stone-400">
-          <div className={`mb-6 ${hasAnimated ? "orb-intro" : ""}`}>
-            <Image 
-              src="/images/logo.png" 
-              alt="Sharrowkin" 
-              width={64} 
-              height={64} 
-              quality={100}
-              unoptimized
-              className="opacity-70 drop-shadow-md"
-            />
+          <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-stone-200 bg-white shadow-[0_1px_10px_rgba(0,0,0,0.035)]">
+            <Bot size={22} strokeWidth={1.5} className="text-stone-600" />
           </div>
-          <p className={`text-[18px] font-semibold text-stone-700 tracking-tight ${hasAnimated ? "text-blur-intro" : ""}`}>
-            Sharrowkin Agent
+          <p className="text-[18px] font-semibold text-stone-800 tracking-tight">
+            Professional coding agent
           </p>
-          <p className={`text-[14px] mt-2 text-stone-400 font-normal leading-relaxed max-w-[320px] ${hasAnimated ? "text-blur-intro-delay" : ""}`}>
-            Your autonomous coding assistant. Send a message to begin.
+          <p className="text-[14px] mt-2 text-stone-400 font-normal leading-relaxed max-w-[360px]">
+            Describe a repository task. The agent will plan, edit, run checks, and report progress in the thread.
           </p>
         </div>
       )}

@@ -56,6 +56,7 @@ class SymbolSummary:
 class FileSummary:
     path: str
     language: str
+    line_count: int = 0
     imports: list[str] = field(default_factory=list)
     symbols: list[SymbolSummary] = field(default_factory=list)
     error: str = ""
@@ -193,7 +194,7 @@ def _append_semantic_node(summary: FileSummary, node) -> None:
 
 
 def parse_python_summary(relative_path: str, source: str) -> FileSummary:
-    summary = FileSummary(path=relative_path, language="python")
+    summary = FileSummary(path=relative_path, language="python", line_count=len(source.splitlines()))
     if parse_semantic_file is not None:
         snapshot = parse_semantic_file(relative_path, source)
         for node in snapshot.nodes:
@@ -235,7 +236,7 @@ def scan_workspace(workspace: Path) -> list[FileSummary]:
         if path.suffix == ".py":
             summaries.append(parse_python_summary(relative_path, source))
         else:
-            summaries.append(FileSummary(path=relative_path, language=path.suffix.lstrip(".")))
+            summaries.append(FileSummary(path=relative_path, language=path.suffix.lstrip("."), line_count=len(source.splitlines())))
     return summaries
 
 
@@ -403,4 +404,3 @@ def run_terminal_command(workspace: Path, command: str, timeout_seconds: int = 1
             exit_code=-2,
             output=f"Failed to execute command: {str(e)}"
         )
-

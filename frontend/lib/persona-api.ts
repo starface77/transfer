@@ -21,32 +21,62 @@ export interface PersonasResponse {
 }
 
 export async function listPersonas(): Promise<PersonasResponse> {
-  const response = await fetch(`${BACKEND_URL}/api/personas`)
-  return response.json()
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/personas`)
+    if (!response.ok) throw new Error('Response not OK')
+    return await response.json()
+  } catch (error) {
+    console.warn('listPersonas failed:', error)
+    return { personas: [], active_persona: null }
+  }
 }
 
 export async function getActivePersona(): Promise<{ id: string | null; name: string; description: string }> {
-  const response = await fetch(`${BACKEND_URL}/api/personas/active`)
-  return response.json()
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/personas/active`)
+    if (!response.ok) throw new Error('Response not OK')
+    return await response.json()
+  } catch (error) {
+    console.warn('getActivePersona failed:', error)
+    return { id: null, name: 'Default', description: 'Standard Sharrowkin agent' }
+  }
 }
 
 export async function activatePersona(personaId: string): Promise<{ status: string; message: string }> {
-  const response = await fetch(`${BACKEND_URL}/api/personas/activate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ persona_id: personaId }),
-  })
-  return response.json()
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/personas/activate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ persona_id: personaId }),
+    })
+    if (!response.ok) throw new Error('Response not OK')
+    return await response.json()
+  } catch (error) {
+    console.warn('activatePersona failed:', error)
+    return { status: 'error', message: 'Backend offline' }
+  }
 }
 
 export async function deactivatePersona(): Promise<{ status: string; message: string }> {
-  const response = await fetch(`${BACKEND_URL}/api/personas/deactivate`, {
-    method: 'POST',
-  })
-  return response.json()
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/personas/deactivate`, {
+      method: 'POST',
+    })
+    if (!response.ok) throw new Error('Response not OK')
+    return await response.json()
+  } catch (error) {
+    console.warn('deactivatePersona failed:', error)
+    return { status: 'error', message: 'Backend offline' }
+  }
 }
 
 export async function getAgentName(): Promise<{ agent_name: string }> {
-  const response = await fetch(`${BACKEND_URL}/api/personas/agent-name`)
-  return response.json()
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/personas/agent-name`)
+    if (!response.ok) throw new Error('Response not OK')
+    return await response.json()
+  } catch (error) {
+    console.warn('getAgentName failed:', error)
+    return { agent_name: 'Sharrowkin' }
+  }
 }

@@ -29,7 +29,7 @@ export function ReviewShell() {
   const [terminalLines, setTerminalLines] = useState<string[]>([
     "sharrowkin-core ~ bash",
     "$ dsm status",
-    "→ MoE vector space connected: stable",
+    "→ Repository context connected: stable",
     "→ 12,408 Memory chunks active",
     "",
     "$ dsm logs",

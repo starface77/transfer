@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useRef, useCallback, type KeyboardEvent, useEffect } from "react"
-import { Square, Mic, MicOff, Paperclip, X, Sparkles, Plus, Rocket, Eye, Check, ChevronDown, ArrowRight, Search } from "lucide-react"
+import { Square, Mic, MicOff, X, Sparkles, Plus, Rocket, Check, ChevronDown, ArrowRight, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
@@ -13,7 +13,6 @@ import {
   DropdownMenuPortal,
 } from "@/components/ui/dropdown-menu"
 import Image from "next/image"
-import { AnimatedOrb } from "./animated-orb"
 import { AudioWaveform } from "./audio-waveform"
 
 export type AIModel =
@@ -39,6 +38,8 @@ interface ComposerProps {
   selectedModel: AIModel
   onModelChange: (model: AIModel) => void
   bottomOffset?: number
+  planMode: "autonomous" | "interactive" | "analyze"
+  onPlanModeChange: (mode: "autonomous" | "interactive" | "analyze") => void
 }
 
 const PLAN_MODES = [
@@ -57,18 +58,26 @@ const PLAN_MODES = [
   {
     id: "analyze" as const,
     title: "Analyze Only",
-    description: "Read codebase state, explain structures, and query DSM memory.",
+    description: "Read the codebase, explain architecture, and answer without editing files.",
     icon: Search,
   },
 ]
 
-export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel, onModelChange, bottomOffset }: ComposerProps) {
+export function Composer({
+  onSend,
+  onStop,
+  isStreaming,
+  disabled,
+  selectedModel,
+  onModelChange,
+  bottomOffset,
+  planMode,
+  onPlanModeChange,
+}: ComposerProps) {
   const [value, setValue] = useState("")
-  const [activePlanMode, setActivePlanMode] = useState<"autonomous" | "interactive" | "analyze">("autonomous")
   const [isRecording, setIsRecording] = useState(false)
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
   const [showImageBounce, setShowImageBounce] = useState(false)
-  const [hasAnimated, setHasAnimated] = useState(false)
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -120,16 +129,8 @@ export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel,
     }
   }, [])
 
-  useEffect(() => {
-    setHasAnimated(true)
-  }, [])
-
-
-
   const playClickSound = useCallback(() => {
-    const audio = new Audio("https://hebbkx1anhila5yf.public.blob.vercel-storage.com/click-FM4Xaa1FJj237591TiZw4yL1fIxdOw.mp3")
-    audio.volume = 0.5
-    audio.play().catch(() => { })
+    // Interface sounds are intentionally disabled for a calm professional workspace.
   }, [])
 
   const toggleRecording = useCallback(() => {
@@ -236,12 +237,12 @@ export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel,
   }, [])
 
   const currentModel = AI_MODELS.find((m) => m.id === selectedModel) || AI_MODELS[0]
-  const selectedModeObj = PLAN_MODES.find((m) => m.id === activePlanMode) || PLAN_MODES[0]
+  const selectedModeObj = PLAN_MODES.find((m) => m.id === planMode) || PLAN_MODES[0]
   const SelectedIcon = selectedModeObj.icon
 
   return (
     <div
-      className={cn("absolute left-0 right-0 px-4 pointer-events-none z-10 transition-all duration-300", hasAnimated && "composer-intro")}
+      className="absolute left-0 right-0 px-4 pointer-events-none z-10 transition-all duration-300"
       style={{ bottom: bottomOffset !== undefined ? `${bottomOffset}px` : "24px" }}
     >
       <div className="relative max-w-3xl mx-auto pointer-events-auto">
@@ -286,7 +287,7 @@ export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel,
                 handleInput()
               }}
               onKeyDown={handleKeyDown}
-              placeholder={isRecording ? "Listening..." : "Message sharrowkin..."}
+              placeholder={isRecording ? "Listening..." : "Ask the agent to build, fix, or analyze..."}
               disabled={isStreaming || disabled}
               rows={1}
               className={cn(
@@ -414,31 +415,24 @@ export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel,
                     playClickSound()
                     onStop()
                   }}
-                  className="relative h-8 w-8 shrink-0 transition-transform rounded-full flex items-center justify-center cursor-pointer hover:scale-105 active:scale-95"
+                  className="relative h-8 w-8 shrink-0 rounded-full flex items-center justify-center bg-stone-900 text-white hover:bg-stone-800 transition-colors"
                   aria-label="Stop generating"
                 >
-                  <AnimatedOrb size={32} variant="red" />
-                  <Square
-                    className="w-3.5 h-3.5 absolute drop-shadow-sm text-red-800"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  />
+                  <Square className="w-3.5 h-3.5" fill="currentColor" aria-hidden="true" />
                 </button>
               ) : (
-                <div className="flex items-center gap-1 shrink-0 bg-stone-50 border border-stone-200/100 rounded-full p-0.5 shadow-sm">
+                <div className="flex items-center gap-1 shrink-0 bg-stone-50 border border-stone-200 rounded-full p-0.5 shadow-sm">
                   {/* Dropdown trigger */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
                         onClick={playClickSound}
-                        className="uiverse-button group outline-none"
+                        className="h-8 min-w-[128px] rounded-full bg-white px-3 text-stone-700 border border-stone-200 hover:border-stone-300 hover:text-stone-950 transition-colors outline-none"
                       >
-                        <div className="uiverse-blob1"></div>
-                        <div className="uiverse-blob2"></div>
-                        <div className="uiverse-inner font-medium text-[12.5px] transition-colors">
-                          <SelectedIcon className="w-3.5 h-3.5 text-white/90" />
-                          <span className="text-white drop-shadow-sm">{selectedModeObj.title}</span>
-                          <ChevronDown className="w-3 h-3 text-white/70" />
+                        <div className="flex h-full items-center justify-center gap-1.5 text-[12.5px] font-medium">
+                          <SelectedIcon className="w-3.5 h-3.5 text-stone-500" />
+                          <span>{selectedModeObj.title}</span>
+                          <ChevronDown className="w-3 h-3 text-stone-400" />
                         </div>
                       </button>
                     </DropdownMenuTrigger>
@@ -450,13 +444,13 @@ export function Composer({ onSend, onStop, isStreaming, disabled, selectedModel,
                     >
                       {PLAN_MODES.map((mode) => {
                         const Icon = mode.icon
-                        const isActive = activePlanMode === mode.id
+                        const isActive = planMode === mode.id
                         return (
                           <DropdownMenuItem
                             key={mode.id}
                             onClick={() => {
                               playClickSound()
-                              setActivePlanMode(mode.id)
+                              onPlanModeChange(mode.id)
                             }}
                             className={cn(
                               "flex flex-col items-start gap-1 cursor-pointer rounded-[14px] px-3.5 py-2.5 transition-colors select-none outline-none",

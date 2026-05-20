@@ -12,33 +12,37 @@ interface MarkdownRendererProps {
 }
 
 export function MarkdownRenderer({ content, className, isStreaming = false }: MarkdownRendererProps) {
-  const renderedContentRef = useRef("")
   const [staticContent, setStaticContent] = useState("")
   const [animatingContent, setAnimatingContent] = useState("")
+  const staticLengthRef = useRef(0)
 
   useEffect(() => {
-    if (isStreaming) {
-      // New content is everything after what we've already rendered as static
-      const newContent = content.slice(staticContent.length)
-      setAnimatingContent(newContent)
-    } else {
-      // Streaming ended - move all content to static
+    if (!isStreaming) {
       setStaticContent(content)
+      staticLengthRef.current = content.length
       setAnimatingContent("")
+      return
     }
-  }, [content, isStreaming, staticContent.length])
 
-  // When animating content gets long enough, move older parts to static
-  useEffect(() => {
-    if (animatingContent.length > 200) {
+    const currentStaticLength = staticLengthRef.current
+    const rawAnimating = content.slice(currentStaticLength)
+
+    if (rawAnimating.length > 200) {
       // Move first 150 chars to static (finding a word boundary)
-      const cutPoint = animatingContent.lastIndexOf(" ", 150)
+      const cutPoint = rawAnimating.lastIndexOf(" ", 150)
       if (cutPoint > 50) {
-        setStaticContent((prev) => prev + animatingContent.slice(0, cutPoint + 1))
-        setAnimatingContent(animatingContent.slice(cutPoint + 1))
+        const nextStaticChunk = rawAnimating.slice(0, cutPoint + 1)
+        const nextAnimating = rawAnimating.slice(cutPoint + 1)
+        
+        setStaticContent((prev) => prev + nextStaticChunk)
+        staticLengthRef.current = currentStaticLength + nextStaticChunk.length
+        setAnimatingContent(nextAnimating)
+        return
       }
     }
-  }, [animatingContent])
+
+    setAnimatingContent(rawAnimating)
+  }, [content, isStreaming])
 
   const renderPlainInlineMarkdown = (text: string) => {
     const elements: (string | React.ReactNode)[] = []

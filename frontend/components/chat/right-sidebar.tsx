@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback } from "react"
-import { Terminal as TerminalIcon, BookOpen, Settings, Cpu, Wifi, ArrowDownToLine, CheckSquare2, Activity, Database, GitBranch, AlertTriangle, CheckCircle2, CircleDashed, Loader2 } from "lucide-react"
+import { Terminal as TerminalIcon, BookOpen, Settings, Cpu, Wifi, ArrowDownToLine, CheckSquare2, AlertTriangle, CheckCircle2, CircleDashed, Loader2, Brain } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TerminalEmulator } from "./terminal-emulator"
 import { AgentTasks } from "./agent-tasks"
@@ -56,6 +56,8 @@ interface RightSidebarProps {
   selectedModel?: string
   backendUrl?: string
   backendConnected?: boolean
+  cognitiveState?: any
+  setCognitiveState?: (state: any) => void
 }
 
 export function RightSidebar({ 
@@ -85,8 +87,10 @@ export function RightSidebar({
   selectedModel = "default",
   backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000",
   backendConnected = true,
+  cognitiveState: propCognitiveState,
+  setCognitiveState: propSetCognitiveState,
 }: RightSidebarProps) {
-  const [activeTab, setActiveTab] = useState<string>("agent")
+  const [activeTab, setActiveTab] = useState<string>("terminal")
 
   // Backend URL
   const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000"
@@ -142,8 +146,51 @@ export function RightSidebar({
     return () => clearInterval(timer)
   }, [BACKEND_URL])
 
+  // --- COGNITIVE STATE SYSTEM ---
+  const [cognitiveState, setCognitiveState] = useState<any>(propCognitiveState || {
+    mode: "Full NARE-Field",
+    energy_ledger: {
+      forward: 15.45,
+      memory_search: 12.50,
+      trace_replay: 22.00,
+      expert_reasoning: 35.50,
+      hebbian: 0.00,
+      total: 85.45
+    },
+    attractors: [],
+    traces: [],
+    dim: 128,
+    matrix_density: 0.0,
+    sampled_matrix: Array(16).fill(0).map(() => Array(16).fill(0))
+  })
+
+  useEffect(() => {
+    if (propCognitiveState) {
+      setCognitiveState(propCognitiveState)
+    }
+  }, [propCognitiveState])
+
+  useEffect(() => {
+    const fetchCognitive = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/cognitive/state`)
+        if (res.ok) {
+          const data = await res.json()
+          setCognitiveState(data)
+          if (propSetCognitiveState) {
+            propSetCognitiveState(data)
+          }
+        }
+      } catch {
+        // Backend not available
+      }
+    }
+    fetchCognitive()
+    const timer = setInterval(fetchCognitive, 3000)
+    return () => clearInterval(timer)
+  }, [BACKEND_URL, propSetCognitiveState])
+
   const tabs = [
-    { id: "agent", label: "Agent", icon: Activity },
     { id: "terminal", label: "Terminal", icon: TerminalIcon },
     { id: "tasks", label: "Tasks", icon: CheckSquare2 },
     { id: "logs", label: "Logs", icon: BookOpen },
@@ -155,7 +202,7 @@ export function RightSidebar({
       <aside 
         style={{ width: isOpen ? `${width}px` : "0px" }}
         className={cn(
-          "hidden lg:flex flex-col bg-[#fcfcfc] overflow-hidden shrink-0 relative select-none",
+          "hidden lg:flex flex-col bg-white overflow-hidden shrink-0 relative select-none",
           isOpen && "border-l border-stone-200/60",
           isResizing ? "transition-none" : "transition-all duration-300 ease-in-out"
         )}
@@ -171,9 +218,8 @@ export function RightSidebar({
           </div>
         )}
 
-        {/* Sleek Segmented Control Header */}
-        <div className="px-4 py-3 border-b border-stone-200/60 bg-transparent shrink-0">
-          <div className="flex bg-stone-100 p-0.5 rounded-xl">
+        <div className="px-4 py-3 border-b border-stone-200/70 bg-white shrink-0">
+          <div className="grid grid-cols-4 gap-1 rounded-xl border border-stone-200/70 bg-stone-50/70 p-1">
             {tabs.map((tab) => {
               const IconComponent = tab.icon
               const isActive = activeTab === tab.id
@@ -183,10 +229,10 @@ export function RightSidebar({
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
-                    "flex-1 flex items-center justify-center gap-2 py-1.5 px-2 text-[12px] font-medium rounded-lg transition-all duration-150 font-sans",
+                    "flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] font-normal transition-all duration-150 font-sans",
                     isActive
-                      ? "bg-white text-stone-900 shadow-[0_1px_4px_rgba(0,0,0,0.04)] border border-stone-200/20"
-                      : "text-stone-400 hover:text-stone-600"
+                      ? "bg-white text-stone-900 shadow-[0_1px_5px_rgba(0,0,0,0.045)]"
+                      : "text-stone-400 hover:text-stone-650"
                   )}
                 >
                   <IconComponent size={14} strokeWidth={1.5} />
@@ -200,65 +246,6 @@ export function RightSidebar({
         {/* Content Area - Clean Background */}
         <div className="flex-1 overflow-y-auto no-scrollbar bg-transparent">
           
-          {/* AGENT VIEW */}
-          {activeTab === "agent" && (
-            <div className="p-4 space-y-4">
-              <div className="bg-white border border-stone-200/80 rounded-2xl p-4 shadow-[0_1px_8px_rgba(0,0,0,0.01)]">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-medium text-stone-400 uppercase tracking-widest font-sans">Current State</div>
-                    <div className="text-[14px] font-semibold text-stone-850 mt-1 truncate">{agentState.message || "Workspace ready"}</div>
-                  </div>
-                  <div className={cn("px-2.5 py-1 rounded-full border text-[10px] uppercase tracking-wider font-medium", agentState.status === "error" ? "bg-red-50 border-red-100 text-red-600" : agentState.status === "done" ? "bg-emerald-50 border-emerald-100 text-emerald-700" : agentState.status === "running" || agentState.status === "thinking" || agentState.status === "stabilizing" ? "bg-stone-900 border-stone-900 text-white" : "bg-stone-50 border-stone-200 text-stone-500")}>{agentState.status}</div>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <div className="rounded-xl bg-stone-50 border border-stone-100 p-2.5">
-                    <div className="text-[10px] text-stone-400 uppercase tracking-wider">Runtime</div>
-                    <div className="text-[12px] font-mono text-stone-700 mt-1">{formatDuration(agentState.runtimeMs)}</div>
-                  </div>
-                  <div className="rounded-xl bg-stone-50 border border-stone-100 p-2.5">
-                    <div className="text-[10px] text-stone-400 uppercase tracking-wider">Backend</div>
-                    <div className={cn("text-[12px] font-mono mt-1", backendConnected ? "text-emerald-600" : "text-red-600")}>{backendConnected ? "live" : "offline"}</div>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <div className="text-[11px] font-medium text-stone-400 uppercase tracking-widest mb-3 px-1 font-sans">Phase Timeline</div>
-                <div className="bg-white border border-stone-200/80 rounded-2xl p-4 shadow-[0_1px_8px_rgba(0,0,0,0.01)] space-y-3.5">
-                  {phases.map((phase, index) => (
-                    <div key={phase.id} className="relative flex gap-3">
-                      {index < phases.length - 1 && <div className="absolute left-[6px] top-[18px] bottom-[-15px] w-px bg-stone-100" />}
-                      <div className="relative z-10 bg-white pt-0.5">{getPhaseIcon(phase.status)}</div>
-                      <div className="min-w-0 flex-1">
-                        <div className={cn("text-[12.5px] font-medium", phase.status === "running" ? "text-stone-850" : phase.status === "error" ? "text-red-600" : "text-stone-500")}>{phase.label}</div>
-                        <div className="text-[11px] text-stone-400 mt-0.5 leading-relaxed">{phase.description}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-[11px] font-medium text-stone-400 uppercase tracking-widest mb-3 px-1 font-sans">Workspace Intelligence</div>
-                <div className="bg-white border border-stone-200/80 rounded-2xl overflow-hidden shadow-[0_1px_8px_rgba(0,0,0,0.01)]">
-                  <div className="flex items-center justify-between p-3.5 border-b border-stone-100">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <Database size={14} strokeWidth={1.5} className="text-stone-400 shrink-0" />
-                      <span className="text-[12.5px] text-stone-600 truncate">Project cache</span>
-                    </div>
-                    <span className="text-[11px] font-mono text-stone-500">{projectIntelligence.status}</span>
-                  </div>
-                  <div className="grid grid-cols-3 divide-x divide-stone-100">
-                    <div className="p-3 text-center"><div className="text-[13px] font-mono text-stone-700">{projectIntelligence.filesIndexed ?? "—"}</div><div className="text-[10px] text-stone-400 mt-0.5">files</div></div>
-                    <div className="p-3 text-center"><div className="text-[13px] font-mono text-stone-700">{projectIntelligence.symbols ?? "—"}</div><div className="text-[10px] text-stone-400 mt-0.5">symbols</div></div>
-                    <div className="p-3 text-center"><div className="text-[13px] font-mono text-stone-700">{contextStatus.percent ?? "—"}</div><div className="text-[10px] text-stone-400 mt-0.5">context %</div></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* TERMINAL VIEW */}
           {activeTab === "terminal" && (
             <div className="p-4 h-full">
@@ -364,6 +351,8 @@ export function RightSidebar({
             </div>
           )}
 
+
+
           {/* INFO VIEW - Breathtaking Real-time Performance Indicators */}
           {activeTab === "info" && (
             <div className="p-4 space-y-6">
@@ -385,6 +374,83 @@ export function RightSidebar({
                   </div>
                 </div>
               </div>
+
+              {/* Workspace Intelligence Section */}
+              {projectIntelligence.status !== "unknown" && (
+                <div>
+                  <div className="text-[11px] font-medium text-stone-400 uppercase tracking-widest mb-3 px-1 font-sans">Workspace Intelligence</div>
+                  <div className="bg-white border border-stone-200/80 rounded-2xl p-4 shadow-[0_1px_8px_rgba(0,0,0,0.01)] space-y-4">
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] text-stone-400 uppercase tracking-wider mb-0.5">Files</span>
+                        <span className="text-[13px] font-mono text-stone-700">{projectIntelligence.filesIndexed ?? 0}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[10px] text-stone-400 uppercase tracking-wider mb-0.5">Lines</span>
+                        <span className="text-[13px] font-mono text-stone-700">{projectIntelligence.linesIndexed ?? 0}</span>
+                      </div>
+                    </div>
+
+                    <div className="h-px w-full bg-stone-100" />
+
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between items-center text-[12px] font-sans text-stone-500">
+                        <span>Avg Complexity</span>
+                        <span className={cn(
+                          "font-mono font-semibold",
+                          (projectIntelligence.complexityAvg || 0) > 10 ? "text-red-500" :
+                          (projectIntelligence.complexityAvg || 0) > 5 ? "text-amber-500" : "text-emerald-500"
+                        )}>{projectIntelligence.complexityAvg?.toFixed(1) || "1.0"}</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-stone-100 rounded-full overflow-hidden">
+                        <div
+                          className={cn(
+                            "h-full rounded-full transition-all duration-1000 ease-out",
+                            (projectIntelligence.complexityAvg || 0) > 10 ? "bg-red-400" :
+                            (projectIntelligence.complexityAvg || 0) > 5 ? "bg-amber-400" : "bg-emerald-400"
+                          )}
+                          style={{ width: `${Math.min(((projectIntelligence.complexityAvg || 0) / 15) * 100, 100)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-center text-[12px] font-sans text-stone-500">
+                      <span>Circular Dependencies</span>
+                      {projectIntelligence.circularDependencies ? (
+                        <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-[10px] font-medium border border-red-100">
+                          <AlertTriangle size={10} />
+                          {projectIntelligence.circularDependencies} Found
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-medium border border-emerald-100">
+                          <CheckCircle2 size={10} />
+                          Clean
+                        </span>
+                      )}
+                    </div>
+
+                    {projectIntelligence.mostComplexFunctions && projectIntelligence.mostComplexFunctions.length > 0 && (
+                      <div className="pt-2">
+                        <div className="text-[10px] text-stone-400 uppercase tracking-wider mb-2">Code Hotspots</div>
+                        <div className="space-y-1.5 max-h-[120px] overflow-y-auto no-scrollbar pr-1">
+                          {projectIntelligence.mostComplexFunctions.map((func, i) => (
+                            <div key={i} className="flex items-center justify-between gap-3 text-[11px] font-mono p-1.5 rounded-lg hover:bg-stone-50">
+                              <span className="text-stone-600 truncate" title={func.id}>{func.id.split('.').pop()}</span>
+                              <span className={cn(
+                                "shrink-0",
+                                func.complexity > 10 ? "text-red-500" : func.complexity > 5 ? "text-amber-500" : "text-stone-400"
+                              )}>
+                                {func.complexity}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {runtimeHints.length > 0 && (
                 <div>
@@ -421,7 +487,7 @@ export function RightSidebar({
                   {/* Memory usage with live bar */}
                   <div className="space-y-1.5">
                     <div className="flex justify-between items-center text-[12px] font-sans text-stone-500">
-                      <span>DSM Allocated Cache</span>
+                      <span>Memory Usage</span>
                       <span className="font-mono text-stone-850 font-semibold">{memoryUsage.toFixed(2)} GB</span>
                     </div>
                     <div className="h-2 w-full bg-stone-100 rounded-full overflow-hidden">
@@ -440,12 +506,12 @@ export function RightSidebar({
 
               {/* Status Section */}
               <div>
-                <div className="text-[11px] font-medium text-stone-400 uppercase tracking-widest mb-3 px-1 font-sans">Network & Intel</div>
+                <div className="text-[11px] font-medium text-stone-400 uppercase tracking-widest mb-3 px-1 font-sans">Connection</div>
                 <div className="bg-white border border-stone-200/80 rounded-2xl overflow-hidden shadow-[0_1px_8px_rgba(0,0,0,0.01)] select-none">
                   <div className="flex items-center justify-between p-3.5 border-b border-stone-100">
                     <div className="flex items-center gap-2.5">
                       <Wifi strokeWidth={1.5} className="w-4 h-4 text-stone-400" />
-                      <span className="text-[13px] text-stone-600 font-normal font-sans">DSM Sync Latency</span>
+                      <span className="text-[13px] text-stone-600 font-normal font-sans">Backend latency</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
@@ -455,21 +521,21 @@ export function RightSidebar({
                   <div className="flex items-center justify-between p-3.5">
                     <div className="flex items-center gap-2.5">
                       <Cpu strokeWidth={1.5} className="w-4 h-4 text-stone-400" />
-                      <span className="text-[13px] text-stone-600 font-normal font-sans">MoE Load Balancing</span>
+                      <span className="text-[13px] text-stone-600 font-normal font-sans">Agent runtime</span>
                     </div>
                     <span className="text-[12px] font-mono text-stone-400/80">stable</span>
                   </div>
                 </div>
               </div>
 
-              {/* Active Sub-routines Section */}
+              {/* Active Services Section */}
               <div>
-                <div className="text-[11px] font-medium text-stone-400 uppercase tracking-widest mb-3 px-1 font-sans">Active Cognitive Routines</div>
+                <div className="text-[11px] font-medium text-stone-400 uppercase tracking-widest mb-3 px-1 font-sans">Agent Services</div>
                 <div className="bg-white border border-stone-200/80 rounded-2xl p-4 shadow-[0_1px_8px_rgba(0,0,0,0.01)] space-y-3.5">
                   {[
-                    { name: "Associative Indexer", desc: "Clustering workspace segments", active: true },
-                    { name: "MoE Routing Protocol", desc: "Balancing local model instances", active: true },
-                    { name: "Trace Context Resolver", desc: "Idle - awaiting context clearing", active: false },
+                    { name: "Repository index", desc: "Project files and symbols", active: true },
+                    { name: "Command runner", desc: "Build, test, and verification tasks", active: true },
+                    { name: "Patch reviewer", desc: "Available when changes are proposed", active: false },
                   ].map((sub, i) => (
                     <div key={i} className="flex items-start gap-3">
                       <div className="mt-0.5 shrink-0">

@@ -2,11 +2,10 @@
 
 import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
-import type { Message, ToolStep, TaskPlan, DebugAnalysis } from "./chat-shell"
-import { Loader2, CheckCircle2, ChevronRight, ChevronDown, CircleDashed, FileCode, Sparkles, XCircle, ListTodo, Clock, Bug, AlertCircle, Lightbulb } from "lucide-react"
+import type { Message, ToolStep, TaskPlan } from "./chat-shell"
+import { Loader2, CheckCircle2, ChevronRight, ChevronDown, CircleDashed, FileCode, XCircle, ListTodo, Clock, Bug, AlertCircle, Lightbulb, Bot, Search, Wrench, FlaskConical, Brain } from "lucide-react"
 import { MarkdownRenderer } from "./markdown-renderer"
 import Image from "next/image"
-import { getAgentName } from "@/lib/persona-api"
 
 interface MessageBubbleProps {
   message: Message
@@ -14,15 +13,28 @@ interface MessageBubbleProps {
   onOpenDiff?: (filename: string) => void
 }
 
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+function formatElapsed(ms: number): string {
+  const safeMs = Math.max(0, ms)
+  const seconds = Math.max(1, Math.round(safeMs / 1000))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  if (minutes < 60) return remainingSeconds ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`
+}
+
+function getStepDuration(index: number, isRunning: boolean): string {
+  if (isRunning) return "now"
+  return `${Math.max(1, index + 1)}s`
 }
 
 function getStepIcon(status: string) {
-  if (status === "running") return <Loader2 strokeWidth={1.5} className="w-3.5 h-3.5 text-stone-400 animate-spin" />
-  if (status === "done") return <CheckCircle2 strokeWidth={1.5} className="w-3.5 h-3.5 text-emerald-400/70" />
-  if (status === "error") return <XCircle strokeWidth={1.5} className="w-3.5 h-3.5 text-red-400/70" />
-  return <CircleDashed strokeWidth={1.5} className="w-3.5 h-3.5 text-stone-200" />
+  if (status === "running") return <Loader2 strokeWidth={1.5} className="h-3.5 w-3.5 animate-spin text-stone-400" />
+  if (status === "done") return <CheckCircle2 strokeWidth={1.5} className="h-3.5 w-3.5 text-emerald-500/80" />
+  if (status === "error") return <XCircle strokeWidth={1.5} className="h-3.5 w-3.5 text-red-500/80" />
+  return <CircleDashed strokeWidth={1.5} className="h-3.5 w-3.5 text-stone-300" />
 }
 
 function getTaskIcon(status: string) {
@@ -30,6 +42,191 @@ function getTaskIcon(status: string) {
   if (status === "done") return <CheckCircle2 strokeWidth={1.5} className="w-3 h-3 text-emerald-500" />
   if (status === "error") return <XCircle strokeWidth={1.5} className="w-3 h-3 text-red-500" />
   return <CircleDashed strokeWidth={1.5} className="w-3 h-3 text-stone-300" />
+}
+
+type AgentActivityKind = "thinking" | "searching" | "tool" | "testing" | "working" | "file"
+
+function stripRawFunctionCalls(content: string) {
+  const withoutCompleteBlocks = content.replace(/<function_calls>[\s\S]*?<\/function_calls>/g, "")
+  const openBlockIndex = withoutCompleteBlocks.indexOf("<function_calls>")
+  const visible = openBlockIndex >= 0 ? withoutCompleteBlocks.slice(0, openBlockIndex) : withoutCompleteBlocks
+  return visible.replace(/\n{3,}/g, "\n\n").trimStart()
+}
+
+function getActivityKind(step: ToolStep): AgentActivityKind {
+  const text = `${step.name} ${step.description || ""}`.toLowerCase()
+  if (/\.(tsx?|jsx?|css|scss|py|html|md|json|ya?ml|mjs|cjs)\b/.test(text) || /\+\d+\s*[−-]\d+/.test(text)) return "file"
+  if (/think|reason|plan|context|reading/.test(text)) return "thinking"
+  if (/search|explor|inspect|scan|index|read|find|grep|rg|list/.test(text)) return "searching"
+  if (/test|verify|build|lint|pytest|npm|check/.test(text)) return "testing"
+  if (/tool|command|terminal|patch|diff|edit|prepared/.test(text)) return "tool"
+  return "working"
+}
+
+function getKindLabel(kind: AgentActivityKind) {
+  if (kind === "file") return "Edited"
+  if (kind === "thinking") return "Thinking"
+  if (kind === "searching") return "Searching"
+  if (kind === "testing") return "Testing"
+  if (kind === "tool") return "Using tool"
+  return "Working"
+}
+
+function getKindIcon(kind: AgentActivityKind) {
+  if (kind === "file") return FileCode
+  if (kind === "thinking") return Brain
+  if (kind === "searching") return Search
+  if (kind === "testing") return FlaskConical
+  if (kind === "tool") return Wrench
+  return Bot
+}
+
+// Extract file paths into beautiful badges
+function renderDescriptionWithFiles(text: string, onOpenDiff?: (filename: string) => void) {
+  const regex = /([a-zA-Z]:\\[^\s\]'"]+)|((?:[\w.-]+\/)+[\w.-]+)|'([\w.-]+\.\w+)'|"([\w.-]+\.\w+)"/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+  
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(<span key={`text-${lastIndex}`}>{text.substring(lastIndex, match.index)}</span>);
+    }
+    const path = match[1] || match[2] || match[3] || match[4];
+    const filename = path.split(/[\\/]/).pop() || path;
+    const isClickable = !!onOpenDiff;
+    
+    parts.push(
+      <span 
+        key={`file-${match.index}`} 
+        onClick={(e) => {
+          if (onOpenDiff) {
+            e.stopPropagation();
+            onOpenDiff("agent-patch.diff"); // Or pass the actual filename if the diff viewer supports it
+          }
+        }}
+        className={cn(
+          "inline-flex items-center gap-1 px-1.5 py-0 mx-1 bg-stone-100 text-stone-700 border border-stone-200/60 rounded-md text-[11px] font-mono shadow-[0_1px_2px_rgba(0,0,0,0.02)] translate-y-[-1px]",
+          isClickable && "cursor-pointer hover:bg-stone-200/80 hover:border-stone-300 transition-colors"
+        )}
+      >
+        <FileCode size={11} className="text-stone-400" />
+        {filename}
+      </span>
+    );
+    lastIndex = regex.lastIndex;
+  }
+  
+  if (lastIndex < text.length) {
+    parts.push(<span key={`text-${lastIndex}`}>{text.substring(lastIndex)}</span>);
+  }
+  
+  return parts.length > 0 ? parts : text;
+}
+
+function AgentTimelineRow({ step, index, onOpenDiff }: { step: ToolStep; index: number, onOpenDiff?: (filename: string) => void }) {
+  const isRunning = step.status === "running"
+  const kind = getActivityKind(step)
+  const KindIcon = getKindIcon(kind)
+
+  const isFilePatch = step.id.startsWith("patch-") || step.name.toLowerCase().includes("patch") || step.name === "Prepared code changes"
+  const isFileKind = kind === "file"
+  const filename = step.description?.split(" ").find(part => /\.(tsx?|jsx?|css|scss|py|html|md|json|ya?ml|mjs|cjs)\b/.test(part))
+
+  // Filter out redundant descriptions
+  const shouldShowDescription = step.description && !["Finished.", "Done", "Working"].includes(step.description.trim())
+  
+  // Try to detect terminal commands to style them like a console
+  const isTerminalCommand = shouldShowDescription && (step.description!.includes("$ ") || step.description!.includes("npm ") || step.description!.includes("git ") || step.description!.includes("python "))
+
+  return (
+    <div 
+      className={cn("relative flex items-start gap-3 py-1.5 group", isFilePatch && onOpenDiff && "cursor-pointer hover:bg-stone-50/80 rounded-lg transition-colors px-2 -mx-2")}
+      onClick={() => { if (isFilePatch && onOpenDiff) onOpenDiff("agent-patch.diff") }}
+    >
+      <div className={cn("relative -ml-[7px] mt-[3px] flex h-3.5 w-3.5 shrink-0 items-center justify-center bg-white", isFilePatch && onOpenDiff && "group-hover:bg-stone-50/80 transition-colors")}>
+        {isRunning ? getStepIcon(step.status) : step.status === "error" ? getStepIcon(step.status) : <KindIcon strokeWidth={1.5} className="h-3.5 w-3.5 text-stone-400" />}
+      </div>
+      <div className="min-w-0 flex-1 text-[13px] font-normal leading-5 text-stone-500">
+        <span className="text-stone-400">{getKindLabel(kind)}</span>
+        <span className={cn("ml-2 font-medium", step.status === "error" ? "text-red-600" : "text-stone-700")}>
+          {(isFilePatch || isFileKind) && !step.name.includes(" ") ? (
+             <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5 bg-stone-100 text-stone-700 border border-stone-200/60 rounded-md text-[11.5px] font-mono shadow-[0_1px_2px_rgba(0,0,0,0.02)] translate-y-[-1px] transition-colors">
+               <FileCode size={12} className="text-stone-400" />
+               {step.name}
+             </span>
+          ) : step.name}
+        </span>
+        
+        {shouldShowDescription && (
+          <div className="mt-1">
+            {isTerminalCommand ? (
+              <div className="text-[11.5px] font-mono text-stone-600 whitespace-pre-wrap break-all leading-relaxed bg-stone-50/80 border border-stone-200/50 rounded-md px-2.5 py-2">
+                {step.description?.split('\n').map((line, i) => (
+                  <div key={i} className="flex">
+                    {line.startsWith("$") ? (
+                      <>
+                        <span className="text-emerald-600/80 font-semibold mr-2 shrink-0">$</span>
+                        <span className="text-indigo-600/80">{line.substring(1).trim()}</span>
+                      </>
+                    ) : (
+                      <span>{line}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-[13px] font-normal leading-relaxed text-stone-500">
+                {renderDescriptionWithFiles(step.description!, isFilePatch ? onOpenDiff : undefined)}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <span className="shrink-0 text-[12px] tabular-nums text-stone-400 opacity-0 group-hover:opacity-100 transition-opacity">{getStepDuration(index, isRunning)}</span>
+    </div>
+  )
+}
+
+function AgentTimelineFileGroup({ group, index }: { group: ToolStep[]; index: number }) {
+  const isRunning = group.some(s => s.status === "running")
+  const hasError = group.some(s => s.status === "error")
+  const kind = getActivityKind(group[0])
+  const KindIcon = getKindIcon(kind)
+  
+  return (
+    <div className="relative flex items-start gap-3 py-2 group/timeline">
+      <div className="relative -ml-[7px] mt-[3px] flex h-3.5 w-3.5 shrink-0 items-center justify-center bg-white">
+        {isRunning ? getStepIcon("running") : hasError ? getStepIcon("error") : <KindIcon strokeWidth={1.5} className="h-3.5 w-3.5 text-stone-400" />}
+      </div>
+      <div className="min-w-0 flex-1 text-[13px] font-normal leading-5 text-stone-500">
+        <span className="text-stone-400">{getKindLabel(kind)}</span>
+        <span className={cn("ml-2 font-medium text-stone-700")}>
+          Worked on {group.length} files
+        </span>
+        
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          {group.map((step) => {
+            const rawPath = step.description?.split('\n')[0]?.trim() || step.name;
+            const pathParts = rawPath.split(/[\\/]/);
+            const filename = pathParts.pop();
+            const directory = pathParts.length > 0 ? pathParts.join('/') + '/' : '';
+
+            return (
+              <span key={step.id} className="inline-flex items-center gap-1.5 px-2 py-1 bg-stone-50 text-stone-700 border border-stone-200/80 rounded-md text-[11.5px] font-mono shadow-sm hover:bg-stone-100 hover:border-stone-300 transition-all cursor-default">
+                <FileCode size={12} className={step.status === "error" ? "text-red-400" : "text-stone-400"} />
+                <span className={step.status === "error" ? "text-red-600" : ""}>
+                  {directory && <span className="text-stone-400 font-normal">{directory}</span>}
+                  {filename}
+                </span>
+              </span>
+            )
+          })}
+        </div>
+      </div>
+      <span className="shrink-0 text-[12px] tabular-nums text-stone-400 opacity-0 group-hover/timeline:opacity-100 transition-opacity">{getStepDuration(index, isRunning)}</span>
+    </div>
+  )
 }
 
 function TaskPlanItem({ task, depth = 0 }: { task: TaskPlan; depth?: number }) {
@@ -87,150 +284,128 @@ function TaskPlanItem({ task, depth = 0 }: { task: TaskPlan; depth?: number }) {
 export function MessageBubble({ message, isStreaming = false, onOpenDiff }: MessageBubbleProps) {
   const isUser = message.role === "user"
   const [expandedSteps, setExpandedSteps] = useState(true)
-  const [agentName, setAgentName] = useState("Sharrowkin")
+  const [now, setNow] = useState(() => Date.now())
 
-  // Fetch agent name on mount and when persona changes
   useEffect(() => {
-    const fetchAgentName = async () => {
-      try {
-        const response = await getAgentName()
-        setAgentName(response.agent_name)
-      } catch (error) {
-        console.error("Failed to fetch agent name:", error)
+    if (isUser || !isStreaming) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [isUser, isStreaming])
+
+  if (!isUser) {
+    const steps = message.toolSteps || []
+    const hasSteps = steps.length > 0
+    const isWorking = hasSteps && steps.some((step) => step.status === "running")
+    const elapsed = formatElapsed((isStreaming ? now : message.createdAt.getTime() + Math.max(1000, steps.length * 1000)) - message.createdAt.getTime())
+    const completedTodos = message.taskPlan?.filter((task) => task.status === "done").length || 0
+    const thoughtLines = message.thinkingText?.split("\n").map((line) => line.trim()).filter(Boolean).slice(-4) || []
+    const visibleContent = stripRawFunctionCalls(message.content)
+    const kinds = new Set(steps.map(getActivityKind))
+    const activitySummary = ["thinking", "searching", "tool", "testing", "file", "working"]
+      .filter((kind) => kinds.has(kind as AgentActivityKind))
+      .map((kind) => getKindLabel(kind as AgentActivityKind).toLowerCase())
+
+    // Group sequential file operations to make UI cleaner
+    const groupedSteps: { type: 'single' | 'group', step?: ToolStep, group?: ToolStep[], id: string, index: number }[] = []
+    let currentFileGroup: ToolStep[] = []
+    let currentGroupIndex = -1
+
+    steps.forEach((step, idx) => {
+      const kind = getActivityKind(step)
+      const isSimpleFileStep = (kind === "file" || kind === "searching") && 
+        !step.id.startsWith("patch-") && 
+        !step.name.includes("Patching") && 
+        !step.name.includes("Prepared code changes") && 
+        !step.name.includes("Analyzed error") &&
+        !step.name.includes("Explored") &&
+        (step.name.includes("Updated") || step.name.includes("Created") || step.name.includes("Read"))
+
+      if (isSimpleFileStep) {
+        if (currentFileGroup.length === 0) {
+          currentGroupIndex = idx
+        }
+        currentFileGroup.push(step)
+      } else {
+        if (currentFileGroup.length > 0) {
+          if (currentFileGroup.length === 1) {
+            groupedSteps.push({ type: 'single', step: currentFileGroup[0], id: currentFileGroup[0].id, index: currentGroupIndex })
+          } else {
+            groupedSteps.push({ type: 'group', group: currentFileGroup, id: `group-${currentFileGroup[0].id}`, index: currentGroupIndex })
+          }
+          currentFileGroup = []
+        }
+        groupedSteps.push({ type: 'single', step: step, id: step.id, index: idx })
+      }
+    })
+    
+    if (currentFileGroup.length > 0) {
+      if (currentFileGroup.length === 1) {
+        groupedSteps.push({ type: 'single', step: currentFileGroup[0], id: currentFileGroup[0].id, index: currentGroupIndex })
+      } else {
+        groupedSteps.push({ type: 'group', group: currentFileGroup, id: `group-${currentFileGroup[0].id}`, index: currentGroupIndex })
       }
     }
 
-    fetchAgentName()
-
-    // Listen for persona change events
-    const handlePersonaChange = () => {
-      fetchAgentName()
-    }
-
-    window.addEventListener("persona-changed", handlePersonaChange)
-    return () => window.removeEventListener("persona-changed", handlePersonaChange)
-  }, [])
-
-  if (!isUser) {
-    const hasSteps = message.toolSteps && message.toolSteps.length > 0;
-    const isWorking = hasSteps && message.toolSteps?.some(s => s.status === "running");
-
     return (
-      <div className="flex w-full gap-4 max-w-3xl mx-auto items-start py-5 group animate-in fade-in duration-300">
-        
-        {/* Avatar */}
-        <div className="w-8 h-8 flex items-center justify-center shrink-0 mt-0.5">
-          <Image 
-            src="/images/logo.png" 
-            alt="Sharrowkin" 
-            width={28} 
-            height={28} 
-            quality={100}
-            priority
-            unoptimized
-            className="object-contain drop-shadow-sm" 
-          />
-        </div>
+      <div className="w-full max-w-3xl mx-auto py-6 animate-in fade-in duration-300">
+        <div className="flex flex-col gap-4">
+          <div className="space-y-2">
+            <button
+              onClick={() => setExpandedSteps(!expandedSteps)}
+              className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] font-normal leading-5 text-stone-400 transition-colors hover:text-stone-600"
+            >
+              {expandedSteps ? <ChevronDown size={13} strokeWidth={1.5} /> : <ChevronRight size={13} strokeWidth={1.5} />}
+              <span>{isStreaming || isWorking ? "Working" : "Worked"} for {elapsed}</span>
+              {steps.length > 0 && <span>· {steps.length} {steps.length === 1 ? "action" : "actions"}</span>}
+              {activitySummary.length > 0 && <span>· {activitySummary.slice(0, 4).join(", ")}</span>}
+            </button>
 
-        <div className="flex flex-col flex-1 min-w-0 gap-3.5">
-          
-          {/* Name */}
-          <div className="flex items-center gap-2">
-            <span className="text-[14px] font-bold text-stone-800 tracking-tight leading-none">{agentName}</span>
-            <span className="text-[11px] font-medium text-stone-500 bg-stone-100 border border-stone-200/50 px-1.5 py-0.5 rounded-md leading-none mt-0.5 tracking-tight">Agent</span>
+            {expandedSteps && (
+              <div className="ml-[6px] pl-5 border-l border-transparent">
+                {message.taskPlan && message.taskPlan.length > 0 && (
+                  <div className="py-1.5">
+                    <div className="relative flex items-center gap-3 text-[13px] font-normal leading-5 text-stone-500">
+                      <ListTodo size={14} strokeWidth={1.5} className="-ml-[22px] bg-white text-stone-400" />
+                      <span>Created {message.taskPlan.length} Tasks</span>
+                      <span className="text-stone-400">{completedTodos}/{message.taskPlan.length}</span>
+                    </div>
+                    <div className="mt-1.5 space-y-0.5">
+                      {message.taskPlan.map((task) => (
+                        <TaskPlanItem key={task.id} task={task} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {thoughtLines.length > 0 && (
+                  <div className="py-1.5">
+                    <div className="relative flex items-center gap-3 text-[13px] font-normal leading-5 text-stone-500">
+                      <Brain size={14} strokeWidth={1.5} className="-ml-[22px] bg-white text-stone-400" />
+                      <span>Thought for {isStreaming ? "now" : "a moment"}</span>
+                    </div>
+                    <div className="mt-1 text-[13px] font-normal leading-6 text-stone-500">
+                      {thoughtLines.map((line, index) => (
+                        <div key={`${line}-${index}`}>{line}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {groupedSteps.length > 0 && groupedSteps.map((item) => {
+                  if (item.type === 'group' && item.group) {
+                    return <AgentTimelineFileGroup key={item.id} group={item.group} index={item.index} />
+                  } else if (item.type === 'single' && item.step) {
+                    return <AgentTimelineRow key={item.id} step={item.step} index={item.index} onOpenDiff={onOpenDiff} />
+                  }
+                  return null
+                })}
+              </div>
+            )}
           </div>
 
-          {/* Task Plan (TODO) */}
-          {message.taskPlan && message.taskPlan.length > 0 && (
-            <div className="w-full max-w-[600px]">
-              <div className="bg-gradient-to-br from-blue-50/50 to-indigo-50/30 border border-blue-100/60 rounded-xl p-3 shadow-sm">
-                <div className="flex items-center gap-2 mb-2">
-                  <ListTodo strokeWidth={1.5} className="w-4 h-4 text-blue-600" />
-                  <span className="text-[13px] font-semibold text-blue-900">Execution Plan</span>
-                  <span className="text-[10px] text-blue-600 bg-blue-100/60 px-1.5 py-0.5 rounded-md ml-auto">
-                    {message.taskPlan.filter(t => t.status === "done").length}/{message.taskPlan.length} completed
-                  </span>
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  {message.taskPlan.map((task) => (
-                    <TaskPlanItem key={task.id} task={task} />
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Timeline Steps */}
-          {hasSteps && (
-            <div className="w-full max-w-[500px]">
-
-              <button
-                onClick={() => setExpandedSteps(!expandedSteps)}
-                className="flex items-center gap-2 py-1 transition-opacity hover:opacity-70"
-              >
-                {isWorking ? (
-                  <Loader2 strokeWidth={1.5} className="w-3.5 h-3.5 text-stone-400 animate-spin" />
-                ) : (
-                  <CheckCircle2 strokeWidth={1.5} className="w-3.5 h-3.5 text-emerald-400/70" />
-                )}
-                <span className="text-[13px] font-medium text-stone-500 tracking-wide">
-                  {isWorking ? "Agent thinking" : "Task completed"}
-                </span>
-                {expandedSteps ? (
-                  <ChevronDown strokeWidth={1.5} className="w-3.5 h-3.5 text-stone-300 ml-1" />
-                ) : (
-                  <ChevronRight strokeWidth={1.5} className="w-3.5 h-3.5 text-stone-300 ml-1" />
-                )}
-              </button>
-              
-              <div className={cn(
-                "overflow-hidden transition-all duration-300 ease-out",
-                expandedSteps ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0"
-              )}>
-                <div className="pt-3 pb-1 flex flex-col gap-4">
-                  {message.toolSteps?.map((step: ToolStep, idx: number, arr: ToolStep[]) => {
-                    const isLast = idx === arr.length - 1;
-                    return (
-                      <div key={step.id} className="relative flex gap-3.5 animate-in fade-in slide-in-from-top-1 duration-300" style={{ animationDelay: `${idx * 60}ms` }}>
-                        {/* Timeline connector */}
-                        {!isLast && (
-                          <div className="absolute left-[6px] top-[18px] bottom-[-16px] w-[1px] bg-stone-100 transition-colors duration-500" />
-                        )}
-                        
-                        {/* Icon */}
-                        <div className="relative z-10 flex items-center justify-center bg-white h-4">
-                          {getStepIcon(step.status)}
-                        </div>
-
-                        {/* Content */}
-                        <div className="flex flex-col flex-1 pb-1">
-                          <div className="flex items-center gap-2">
-                            <span className={cn(
-                              "text-[13px] font-normal tracking-wide transition-colors duration-300",
-                              step.status === "running" ? "text-stone-800" : 
-                              step.status === "error" ? "text-red-500" : "text-stone-400"
-                            )}>
-                              {step.name}
-                            </span>
-                            
-                            {step.status === "running" && (
-                              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-stone-100/60 text-stone-400 animate-in fade-in duration-200">
-                                working
-                              </span>
-                            )}
-                          </div>
-                          
-                          {step.description && step.status === "running" && (
-                            <div className="mt-1 text-[12px] text-stone-400/70 font-normal leading-relaxed animate-in fade-in duration-200">
-                              {step.description}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
+          {visibleContent && (
+            <div className="text-[14px] text-stone-900 font-normal leading-7 tracking-[-0.01em] max-w-full overflow-x-auto animate-in fade-in duration-300">
+              <MarkdownRenderer content={visibleContent} isStreaming={isStreaming} />
             </div>
           )}
 
@@ -283,24 +458,8 @@ export function MessageBubble({ message, isStreaming = false, onOpenDiff }: Mess
             </div>
           )}
 
-          {/* Live Thinking — subtle left border */}
-          {message.thinkingText && (
-            <div className="w-full max-w-[500px] animate-in fade-in duration-200">
-              <div className="text-[12px] text-stone-400 leading-relaxed whitespace-pre-wrap border-l-[1.5px] border-stone-200/80 pl-3 py-1">
-                {message.thinkingText.split("\n").slice(-5).join("\n")}
-              </div>
-            </div>
-          )}
-
-          {/* Main Content */}
-          {message.content && (
-            <div className="text-[14px] text-stone-800 font-normal leading-relaxed max-w-full overflow-x-auto animate-in fade-in duration-300">
-              <MarkdownRenderer content={message.content} isStreaming={isStreaming} />
-            </div>
-          )}
-
           {/* Diff Card */}
-          {message.content && message.content.includes("```diff") && onOpenDiff && (
+          {visibleContent && visibleContent.includes("```diff") && onOpenDiff && (
             <div className="flex items-center justify-between p-4 bg-stone-50 border border-stone-200/60 rounded-2xl max-w-[500px] shadow-[0_1px_4px_rgba(0,0,0,0.01)] animate-in fade-in slide-in-from-bottom-2 duration-500">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-white border border-stone-200/60 flex items-center justify-center shadow-[0_1px_3px_rgba(0,0,0,0.01)]">
@@ -321,11 +480,15 @@ export function MessageBubble({ message, isStreaming = false, onOpenDiff }: Mess
           )}
 
           {/* Streaming dots */}
-          {isStreaming && !message.content && !isWorking && (
-            <div className="flex items-center gap-1.5 h-6">
-              <div className="w-1.5 h-1.5 rounded-full bg-stone-200 animate-pulse" />
-              <div className="w-1.5 h-1.5 rounded-full bg-stone-200 animate-pulse delay-75" />
-              <div className="w-1.5 h-1.5 rounded-full bg-stone-200 animate-pulse delay-150" />
+          {isStreaming && !message.content && !hasSteps && thoughtLines.length === 0 && (
+            <div className="flex items-center gap-2 text-[13px] text-stone-400">
+              <Bot size={15} strokeWidth={1.5} />
+              <span>Starting agent run</span>
+              <div className="flex items-center gap-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-stone-300 animate-pulse" />
+                <div className="w-1.5 h-1.5 rounded-full bg-stone-300 animate-pulse delay-75" />
+                <div className="w-1.5 h-1.5 rounded-full bg-stone-300 animate-pulse delay-150" />
+              </div>
             </div>
           )}
         </div>

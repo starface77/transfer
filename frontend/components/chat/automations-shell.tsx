@@ -213,34 +213,34 @@ export function AutomationsShell() {
 
   // Phase layout items
   const phases = [
-    { key: "observe", label: "Observe", desc: "AST Workspace Analysis" },
-    { key: "recall", label: "Recall", desc: "DSM & RLD Recall Memory" },
-    { key: "reason", label: "Reason", desc: "Patch Generation" },
-    { key: "stabilize", label: "Stabilize", desc: "Test Verification & Healing" },
-    { key: "commit", label: "Commit", desc: "DNA Evolutionary Learning" }
+    { key: "observe", label: "Explore", desc: "Repository analysis" },
+    { key: "recall", label: "Context", desc: "Load relevant files" },
+    { key: "reason", label: "Plan", desc: "Decide the changes" },
+    { key: "stabilize", label: "Verify", desc: "Run checks" },
+    { key: "commit", label: "Finalize", desc: "Prepare summary" }
   ]
 
   // Recommended workspace actions
   const recommendedActions = [
     {
-      title: "🧪 Run pytest and self-heal",
-      prompt: "Run full test suite via pytest and stabilize any failing tests",
-      desc: "Autonomously runs tests and rewrites code to fix failures."
+      title: "Run tests and fix failures",
+      prompt: "Run the full test suite and fix any failing tests",
+      desc: "Runs checks, identifies failures, and applies focused fixes."
     },
     {
-      title: "📝 Generate AST Standup Report",
-      prompt: "Generate AST-based standup report for the last 24 hours in the workspace",
-      desc: "Aggregates workspace changes into an advanced developer standup."
+      title: "Summarize recent work",
+      prompt: "Generate a concise report for recent workspace changes",
+      desc: "Aggregates changes into a professional engineering update."
     },
     {
-      title: "⚡ Index Workspace in DSM Memory",
-      prompt: "Observe full workspace, build AST architecture index and sync dynamic segmented memory",
-      desc: "Re-scans code, parses symbols, and updates local semantic vector space."
+      title: "Analyze repository structure",
+      prompt: "Analyze the full workspace and map the application architecture",
+      desc: "Scans code, routes, components, dependencies, and key files."
     },
     {
-      title: "🧬 Latent DNA Evolution Diagnostic",
-      prompt: "Run Recursive Latent DNA diagnostic benchmark to check reasoning accuracy",
-      desc: "Evaluates reasoning trajectories on reasoning tasks."
+      title: "Review implementation quality",
+      prompt: "Review the current implementation and list the highest impact improvements",
+      desc: "Finds code quality, UX, reliability, and verification gaps."
     }
   ]
 
@@ -292,7 +292,7 @@ export function AutomationsShell() {
                   </div>
                   <p className="text-[13px] text-stone-400 font-light max-w-xl leading-relaxed">
                     Hello! I am connected to your <span className="font-mono text-[12px] bg-stone-50 px-1.5 py-0.5 rounded text-stone-700">Field</span> repository. 
-                    I can scan your AST, recall DSM memory, write complete patches, run tests, and self-heal code errors automatically.
+                    I can read the repository, plan changes, edit code, run tests, and report the result clearly.
                   </p>
                 </div>
               </div>
@@ -305,15 +305,15 @@ export function AutomationsShell() {
                 </div>
                 <div className="space-y-0.5">
                   <span className="text-[10px] text-stone-400 uppercase tracking-widest block">Intelligence</span>
-                  <span className="text-[12.5px] text-stone-800 font-normal">256-dim Vector MoE</span>
+                  <span className="text-[12.5px] text-stone-800 font-normal">Repository-aware</span>
                 </div>
                 <div className="space-y-0.5">
                   <span className="text-[10px] text-stone-400 uppercase tracking-widest block">Local Memory</span>
-                  <span className="text-[12.5px] font-mono text-stone-800 font-normal">DSM + RLD Connected</span>
+                  <span className="text-[12.5px] font-mono text-stone-800 font-normal">Context ready</span>
                 </div>
                 <div className="space-y-0.5">
                   <span className="text-[10px] text-stone-400 uppercase tracking-widest block">Healing Loop</span>
-                  <span className="text-[12.5px] text-stone-800 font-normal">Pytest Self-Healing</span>
+                  <span className="text-[12.5px] text-stone-800 font-normal">Test verification</span>
                 </div>
               </div>
             </div>

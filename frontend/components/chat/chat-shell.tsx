@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useSearchParams } from "next/navigation"
-import { MessageSquareDashed, ArrowDownToLine, Activity, Database, GitBranch, Server, Timer, WifiOff, AlertTriangle, RotateCcw } from "lucide-react"
+import { MessageSquareDashed, ArrowDownToLine } from "lucide-react"
 import { MessageList } from "./message-list"
 import { Composer, type AIModel } from "./composer"
 import { Button } from "@/components/ui/button"
@@ -79,7 +79,11 @@ export interface ProjectIntelligence {
   status: "unknown" | "warming" | "ready" | "stale" | "error"
   workspacePath?: string
   filesIndexed?: number
+  linesIndexed?: number
   symbols?: number
+  complexityAvg?: number
+  circularDependencies?: number
+  mostComplexFunctions?: Array<{ id: string; complexity: number; line: number }>
   cacheHitRate?: number
   lastIndexedAt?: string
   summary?: string
@@ -128,10 +132,10 @@ export interface RuntimeHint {
 }
 
 const DEFAULT_PHASES: AgentPhase[] = [
-  { id: "observe", label: "Observe", status: "pending", description: "Map workspace and request intent" },
-  { id: "recall", label: "Recall", status: "pending", description: "Load project intelligence and cache" },
-  { id: "reason", label: "Reason", status: "pending", description: "Plan edits and tool calls" },
-  { id: "stabilize", label: "Stabilize", status: "pending", description: "Run checks and recover errors" },
+  { id: "observe", label: "Explore", status: "pending", description: "Understand the workspace" },
+  { id: "recall", label: "Context", status: "pending", description: "Load relevant files" },
+  { id: "reason", label: "Plan", status: "pending", description: "Choose the implementation path" },
+  { id: "stabilize", label: "Verify", status: "pending", description: "Run checks and handle failures" },
   { id: "commit", label: "Finalize", status: "pending", description: "Prepare patch and summary" },
 ]
 
@@ -159,110 +163,6 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
 }
 
-function AgentWorkspaceHeader({
-  agentState,
-  phases,
-  projectIntelligence,
-  contextStatus,
-  selectedModel,
-  backendConnected,
-  backendUrl,
-  runtimeHints,
-  diffStatus,
-  testStatus,
-  onRetry,
-  onReset,
-}: {
-  agentState: AgentState
-  phases: AgentPhase[]
-  projectIntelligence: ProjectIntelligence
-  contextStatus: ContextStatus
-  selectedModel: AIModel
-  backendConnected: boolean
-  backendUrl: string
-  runtimeHints: RuntimeHint[]
-  diffStatus: DiffStatus
-  testStatus: TestStatus
-  onRetry: () => void
-  onReset: () => void
-}) {
-  const runningPhase = phases.find((phase) => phase.status === "running")
-  const completedCount = phases.filter((phase) => phase.status === "done").length
-  const contextPercent = contextStatus.percent ?? (contextStatus.usedTokens && contextStatus.maxTokens ? Math.round((contextStatus.usedTokens / contextStatus.maxTokens) * 100) : undefined)
-  const stateTone = agentState.status === "error" ? "text-red-600 bg-red-50 border-red-100" : agentState.status === "done" ? "text-emerald-700 bg-emerald-50 border-emerald-100" : agentState.status === "running" || agentState.status === "thinking" || agentState.status === "stabilizing" ? "text-stone-800 bg-white border-stone-200" : "text-stone-500 bg-stone-50 border-stone-200"
-
-  return (
-    <div className="absolute top-4 left-16 right-4 z-10 pointer-events-none">
-      <div className="max-w-4xl mx-auto pointer-events-auto rounded-2xl border border-stone-200/70 bg-white/90 backdrop-blur-xl shadow-[0_8px_30px_rgba(0,0,0,0.045)] px-4 py-3">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className={cn("h-8 w-8 rounded-full border flex items-center justify-center shrink-0", stateTone)}>
-              {backendConnected ? <Activity size={15} strokeWidth={1.5} className={cn((agentState.status === "running" || agentState.status === "thinking") && "animate-pulse")} /> : <WifiOff size={15} strokeWidth={1.5} />}
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-[13px] font-semibold text-stone-850 tracking-tight truncate">{agentState.message || (runningPhase ? `${runningPhase.label} in progress` : "Workspace ready")}</span>
-                <span className="text-[10px] font-medium text-stone-400 uppercase tracking-wider shrink-0">{agentState.status}</span>
-              </div>
-              <div className="flex items-center gap-2 mt-1 text-[11px] text-stone-400 min-w-0">
-                <Server size={12} strokeWidth={1.5} className="shrink-0" />
-                <span className="truncate">{backendConnected ? backendUrl.replace(/^https?:\/\//, "") : "backend disconnected"}</span>
-                <span className="text-stone-300">•</span>
-                <span className="truncate">{selectedModel}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="hidden xl:flex items-center gap-2 shrink-0">
-            <div className="px-2.5 py-1.5 rounded-xl bg-stone-50 border border-stone-200/70 flex items-center gap-2">
-              <Database size={13} strokeWidth={1.5} className="text-stone-400" />
-              <span className="text-[11px] text-stone-500">{projectIntelligence.status}</span>
-              {typeof projectIntelligence.filesIndexed === "number" && <span className="text-[11px] font-mono text-stone-400">{projectIntelligence.filesIndexed} files</span>}
-            </div>
-            <div className="px-2.5 py-1.5 rounded-xl bg-stone-50 border border-stone-200/70 flex items-center gap-2">
-              <Timer size={13} strokeWidth={1.5} className="text-stone-400" />
-              <span className="text-[11px] text-stone-500">{formatDuration(agentState.runtimeMs)}</span>
-            </div>
-            {(diffStatus.status !== "none" || testStatus.status !== "idle") && (
-              <div className="px-2.5 py-1.5 rounded-xl bg-stone-50 border border-stone-200/70 flex items-center gap-2">
-                <GitBranch size={13} strokeWidth={1.5} className="text-stone-400" />
-                <span className="text-[11px] text-stone-500">{diffStatus.status !== "none" ? `${diffStatus.filesChanged ?? 0} files` : "no diff"}</span>
-                <span className={cn("text-[11px]", testStatus.status === "passed" ? "text-emerald-600" : testStatus.status === "failed" ? "text-red-600" : "text-stone-400")}>{testStatus.status}</span>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button onClick={onRetry} className="h-7 px-2.5 rounded-lg hover:bg-stone-100 text-[11px] text-stone-500 transition-colors flex items-center gap-1.5">
-              <RotateCcw size={12} strokeWidth={1.5} />
-              Retry
-            </button>
-            <button onClick={onReset} className="h-7 px-2.5 rounded-lg hover:bg-stone-100 text-[11px] text-stone-500 transition-colors">Reset</button>
-          </div>
-        </div>
-
-        <div className="mt-3 flex items-center gap-2">
-          {phases.map((phase, index) => (
-            <div key={phase.id} className="flex items-center gap-2 flex-1 min-w-0">
-              <div className={cn("h-1.5 flex-1 rounded-full transition-colors", phase.status === "done" ? "bg-stone-800" : phase.status === "running" ? "bg-stone-400 animate-pulse" : phase.status === "error" ? "bg-red-300" : "bg-stone-100")} />
-              {index < phases.length - 1 && <span className="text-stone-200 text-[10px]">/</span>}
-            </div>
-          ))}
-          <span className="text-[10px] font-mono text-stone-400 shrink-0">{completedCount}/{phases.length}</span>
-        </div>
-
-        {(contextPercent !== undefined || runtimeHints.length > 0 || agentState.status === "error") && (
-          <div className="mt-2 flex items-center gap-3 text-[11px] text-stone-400 overflow-hidden">
-            {contextPercent !== undefined && <span className="shrink-0">context {contextPercent}% · cache {contextStatus.cache || projectIntelligence.status}</span>}
-            {runtimeHints.slice(0, 2).map((hint) => <span key={hint.id} className={cn("truncate", hint.tone === "warning" && "text-amber-600", hint.tone === "error" && "text-red-600", hint.tone === "good" && "text-emerald-600")}>{hint.label}: {hint.value}</span>)}
-            {agentState.status === "error" && <span className="flex items-center gap-1 text-red-600 shrink-0"><AlertTriangle size={12} strokeWidth={1.5} /> recoverable</span>}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
 export function ChatShell() {
   const searchParams = useSearchParams()
   const activeSessionId = searchParams?.get("session") || "session-1"
@@ -287,6 +187,23 @@ export function ChatShell() {
   const [runtimeHints, setRuntimeHints] = useState<RuntimeHint[]>([])
   const [diffStatus, setDiffStatus] = useState<DiffStatus>({ status: "none" })
   const [testStatus, setTestStatus] = useState<TestStatus>({ status: "idle" })
+  const [planMode, setPlanMode] = useState<"autonomous" | "interactive" | "analyze">("autonomous")
+  const [cognitiveState, setCognitiveState] = useState<any>({
+    mode: "Full NARE-Field",
+    energy_ledger: {
+      forward: 15.45,
+      memory_search: 12.50,
+      trace_replay: 22.00,
+      expert_reasoning: 35.50,
+      hebbian: 0.00,
+      total: 85.45
+    },
+    attractors: [],
+    traces: [],
+    dim: 128,
+    matrix_density: 0.0,
+    sampled_matrix: Array(16).fill(0).map(() => Array(16).fill(0))
+  })
 
   const backendConnected = agentState.status !== "error" || !error
 
@@ -297,7 +214,7 @@ export function ChatShell() {
     "sharrowkin-core ~ bash",
     "$ agent start --mode=autonomous",
     "[INFO] Initializing workspace...",
-    "[INFO] Loading memory buffers (DSM)...",
+    "[INFO] Loading repository context...",
     "[INFO] Connecting to language model...",
     "→ System ready. Awaiting input.",
   ])
@@ -538,7 +455,7 @@ export function ChatShell() {
         content: "",
         createdAt: new Date(),
         toolSteps: [
-          { id: "step-1", name: "Recalling memory context (DSM)", status: "running", description: "Querying Dynamic Segmented Memory server..." }
+          { id: "step-1", name: "Preparing workspace", status: "running", description: "Opening the repository context." }
         ]
       }
 
@@ -552,11 +469,11 @@ export function ChatShell() {
       setRuntimeHints([{ id: "model", label: "model", value: selectedModel, tone: "neutral" }])
       setDiffStatus({ status: "none" })
       setTestStatus({ status: "idle" })
-      appendToolActivity({ name: "Open agent websocket", status: "running", message: "Negotiating live workspace channel" })
+      appendToolActivity({ name: "Connection", status: "running", message: "Opening the agent session" })
 
       // --- REAL STREAMING VIA WEBSOCKET TO BACKEND AGENT ---
       let currentSteps: ToolStep[] = [
-        { id: "step-1", name: "Recalling memory context (DSM)", status: "running", description: "Querying Dynamic Segmented Memory server..." }
+        { id: "step-1", name: "Preparing workspace", status: "running", description: "Opening the repository context." }
       ];
 
       const updateSteps = (newSteps: ToolStep[]) => {
@@ -569,14 +486,62 @@ export function ChatShell() {
         }));
       };
 
-      const updateContent = (chunk: string) => {
+      const appendStep = (step: Omit<ToolStep, "id"> & { id?: string }) => {
+        const entry: ToolStep = { id: step.id || generateId(), name: step.name, status: step.status, description: step.description }
+        const existingIndex = currentSteps.findIndex((item) => item.id === entry.id)
+        const nextSteps = existingIndex >= 0
+          ? currentSteps.map((item, index) => index === existingIndex ? entry : item)
+          : [...currentSteps, entry].slice(-24)
+        updateSteps(nextSteps)
+      }
+
+      const parsedFunctionCallKeys = new Set<string>()
+
+      const setAssistantContent = (content: string) => {
         setMessages(prev => prev.map(msg => {
           if (msg.id === assistantMessage.id) {
-            return { ...msg, content: msg.content + chunk };
+            return { ...msg, content };
           }
           return msg;
         }));
       };
+
+      const extractFunctionCalls = (raw: string) => {
+        const completeBlockRegex = /<function_calls>[\s\S]*?<\/function_calls>/g
+        const invokeRegex = /<invoke\s+name=["']([^"']+)["'][^>]*>([\s\S]*?)<\/invoke>/g
+        const parameterRegex = /<parameter\s+name=["']([^"']+)["'][^>]*>([\s\S]*?)<\/parameter>/g
+
+        for (const blockMatch of raw.matchAll(completeBlockRegex)) {
+          const block = blockMatch[0]
+          for (const invokeMatch of block.matchAll(invokeRegex)) {
+            const toolName = invokeMatch[1]
+            const body = invokeMatch[2]
+            const params: string[] = []
+
+            for (const paramMatch of body.matchAll(parameterRegex)) {
+              const name = paramMatch[1]
+              const value = paramMatch[2].replace(/\s+/g, " ").trim()
+              if (value) params.push(`${name}: ${value}`)
+            }
+
+            const key = `${toolName}:${params.join("|")}`
+            if (!parsedFunctionCallKeys.has(key)) {
+              parsedFunctionCallKeys.add(key)
+              appendStep({
+                id: `function-call-${key}`,
+                name: toolName,
+                status: "done",
+                description: params.join(" · ") || "Tool call",
+              })
+            }
+          }
+        }
+
+        const withoutCompleteBlocks = raw.replace(completeBlockRegex, "")
+        const openBlockIndex = withoutCompleteBlocks.indexOf("<function_calls>")
+        const visible = openBlockIndex >= 0 ? withoutCompleteBlocks.slice(0, openBlockIndex) : withoutCompleteBlocks
+        return visible.replace(/\n{3,}/g, "\n\n").trimStart()
+      }
 
       // Fetch via WebSocket to our autonomous agent backend!
       try {
@@ -589,10 +554,11 @@ export function ChatShell() {
             task: content.trim(),
             workspace_path: "",
             model: selectedModel,
+            plan_mode: planMode,
           }))
           
           updateSteps([
-            { id: "observe", name: "Observe (AST Workspace Analysis)", status: "running", description: "Scanning active project files..." }
+            { id: "observe", name: "Exploring repository", status: "running", description: "Reading project files and structure." }
           ])
           setAgentState({ status: "running", phase: "observe", message: "Observing workspace", startedAt: new Date(startedAtRef.current || Date.now()).toISOString(), updatedAt: new Date().toISOString() })
           setPhaseStatus("observe", "running", "Scanning active project files")
@@ -610,27 +576,24 @@ export function ChatShell() {
             if (data.type === "phase_change") {
               // Update tool steps based on phase
               const phaseNames: Record<string, string> = {
-                observe: "Observe (AST Analysis)",
-                recall: "Recall (Memory Retrieval)",
-                reason: "Reason (Patch Generation)",
-                stabilize: "Stabilize (Test Verification)",
-                commit: "Commit (Evolutionary DNA Update)"
+                observe: "Exploring repository",
+                recall: "Reading context",
+                reason: "Planning changes",
+                stabilize: "Running checks",
+                commit: "Finalizing response"
               }
               
               const currentPhaseKey = data.phase
-              const newSteps: ToolStep[] = []
               const allKeys = ["observe", "recall", "reason", "stabilize", "commit"]
-              
-              for (const key of allKeys) {
-                if (key === currentPhaseKey) {
-                  newSteps.push({ id: key, name: phaseNames[key], status: "running", description: "Active cognitive phase..." })
-                } else if (allKeys.indexOf(key) < allKeys.indexOf(currentPhaseKey)) {
-                  newSteps.push({ id: key, name: phaseNames[key], status: "done", description: "Completed." })
-                }
-              }
-              updateSteps(newSteps)
-              setAgentState((prev) => ({ ...prev, status: currentPhaseKey === "stabilize" ? "stabilizing" : "running", phase: currentPhaseKey, message: `${phaseNames[currentPhaseKey] || currentPhaseKey} active`, updatedAt: new Date().toISOString(), runtimeMs: startedAtRef.current ? Date.now() - startedAtRef.current : prev.runtimeMs }))
-              setPhaseStatus(currentPhaseKey, "running", data.message || "Active cognitive phase")
+
+              updateSteps(currentSteps.map((step) => (
+                (allKeys.includes(step.id) || step.id.startsWith("phase-")) && step.status === "running"
+                  ? { ...step, status: "done", description: step.description || "Done" }
+                  : step
+              )))
+              appendStep({ id: currentPhaseKey, name: phaseNames[currentPhaseKey] || currentPhaseKey, status: "running", description: data.message || "Working" })
+              setAgentState((prev) => ({ ...prev, status: currentPhaseKey === "stabilize" ? "stabilizing" : "running", phase: currentPhaseKey, message: phaseNames[currentPhaseKey] || "Working", updatedAt: new Date().toISOString(), runtimeMs: startedAtRef.current ? Date.now() - startedAtRef.current : prev.runtimeMs }))
+              setPhaseStatus(currentPhaseKey, "running", data.message || "Working")
               appendToolActivity({ name: phaseNames[currentPhaseKey] || currentPhaseKey, status: "running", message: data.message || "Phase transition" })
               setTerminalLines(prev => [...prev, `➔ Transitioned to phase: ${data.phase.toUpperCase()}`])
               
@@ -645,6 +608,7 @@ export function ChatShell() {
               }))
               setAgentState((prev) => ({ ...prev, status: "thinking", message: thinkingText.slice(0, 120) || "Reasoning", updatedAt: new Date().toISOString(), runtimeMs: startedAtRef.current ? Date.now() - startedAtRef.current : prev.runtimeMs }))
               appendToolActivity({ name: "Reasoning", status: "running", message: thinkingText.slice(0, 180) })
+              appendStep({ id: "thinking-live", name: "Thinking through the next step", status: "running", description: thinkingText.slice(0, 180) })
               setTerminalLines(prev => [...prev, `💭 ${thinkingText}`])
 
             } else if (data.type === "task_plan") {
@@ -657,6 +621,7 @@ export function ChatShell() {
                 return msg
               }))
               appendToolActivity({ name: "Execution plan", status: "done", message: `${plan.length} top-level tasks` })
+              appendStep({ id: "todos-created", name: `Created ${plan.length} todos`, status: "done", description: "Execution plan ready" })
               setTerminalLines(prev => [...prev, `📋 Execution plan generated: ${plan.length} top-level tasks`])
 
             } else if (data.type === "task_update") {
@@ -685,6 +650,7 @@ export function ChatShell() {
 
             } else if (data.type === "log") {
               appendToolActivity({ name: data.tag || data.level || "log", status: data.level === "error" ? "error" : "done", message: data.message })
+              appendStep({ name: data.tag || "Agent event", status: data.level === "error" ? "error" : "done", description: data.message })
               setTerminalLines(prev => [...prev, `[${data.level?.toUpperCase() || 'INFO'}] ${data.message}`])
 
             } else if (data.type === "debug_analysis") {
@@ -708,6 +674,7 @@ export function ChatShell() {
 
               setAgentState((prev) => ({ ...prev, status: "error", message: debugInfo.errorMessage || debugInfo.errorType, updatedAt: new Date().toISOString(), runtimeMs: startedAtRef.current ? Date.now() - startedAtRef.current : prev.runtimeMs }))
               appendToolActivity({ name: "Recoverable error", status: "error", message: debugInfo.rootCause || debugInfo.errorMessage, target: debugInfo.filePath })
+              appendStep({ name: "Analyzed error", status: "error", description: debugInfo.rootCause || debugInfo.errorMessage })
               setTerminalLines(prev => [
                 ...prev,
                 `🐛 Error Analysis: ${debugInfo.errorType}`,
@@ -720,20 +687,43 @@ export function ChatShell() {
               const additions = diffText.split("\n").filter((line: string) => line.startsWith("+") && !line.startsWith("+++")).length
               const deletions = diffText.split("\n").filter((line: string) => line.startsWith("-") && !line.startsWith("---")).length
               const filesChanged = Array.isArray(data.files) ? data.files.length : undefined
+              const fileStats = new Map<string, { additions: number; deletions: number }>()
+              let currentFile = ""
+              for (const line of diffText.split("\n")) {
+                if (line.startsWith("diff --git ")) {
+                  currentFile = line.split(" b/")[1] || line.split(" a/")[1] || ""
+                  if (currentFile) fileStats.set(currentFile, { additions: 0, deletions: 0 })
+                } else if (currentFile && line.startsWith("+") && !line.startsWith("+++")) {
+                  fileStats.get(currentFile)!.additions += 1
+                } else if (currentFile && line.startsWith("-") && !line.startsWith("---")) {
+                  fileStats.get(currentFile)!.deletions += 1
+                }
+              }
               setLastDiffContent(diffText)
-              setDiffStatus({ filename: "agent-patch.diff", status: "proposed", filesChanged, additions, deletions })
-              appendToolActivity({ name: "Patch proposed", status: "done", message: `${filesChanged ?? 0} file(s), +${additions}/-${deletions}` })
+              if (planMode === "autonomous") {
+                setDiffStatus({ filename: "agent-patch.diff", status: "accepted", filesChanged, additions, deletions })
+              } else {
+                setDiffStatus({ filename: "agent-patch.diff", status: "proposed", filesChanged, additions, deletions })
+              }
+              appendToolActivity({ name: planMode === "autonomous" ? "Patch applied" : "Patch proposed", status: "done", message: `${filesChanged ?? 0} file(s), +${additions}/-${deletions}` })
+              appendStep({ name: planMode === "autonomous" ? "Applied code changes" : "Prepared code changes", status: "done", description: `${filesChanged ?? 0} file(s), +${additions}/-${deletions}` })
+              for (const [file, stats] of fileStats) {
+                appendStep({ id: `patch-${file}`, name: file, status: "done", description: `+${stats.additions} −${stats.deletions}` })
+              }
               setTerminalLines(prev => [...prev, `✔ Patch generated: ${(data.files || []).length} file(s) changed`])
               if (diffText) {
                 setTerminalLines(prev => [...prev, ...diffText.split("\n").slice(0, 30)])
               }
-              // Store diff content and trigger diff viewer
-              setActiveDiffFile("agent-patch.diff")
+              // Store diff content and trigger diff viewer if not autonomous
+              if (planMode !== "autonomous") {
+                setActiveDiffFile("agent-patch.diff")
+              }
               
             } else if (data.type === "test_result") {
               const passed = data.success === true
               setTestStatus({ status: passed ? "passed" : "failed", command: data.command, message: data.message, passed: parseNumber(data.passed), failed: parseNumber(data.failed), durationMs: parseNumber(data.duration_ms ?? data.durationMs) })
               appendToolActivity({ name: "Test verification", status: passed ? "done" : "error", message: data.message || `Success: ${data.success}` })
+              appendStep({ name: "Ran verification", status: passed ? "done" : "error", description: data.command || data.message || `Success: ${data.success}` })
               setTerminalLines(prev => [
                 ...prev, 
                 `[TEST] Run complete. Success: ${data.success}`,
@@ -756,12 +746,21 @@ export function ChatShell() {
                 status: data.status || prev.status || "unknown",
                 workspacePath: data.workspace_path || data.workspacePath || prev.workspacePath,
                 filesIndexed: parseNumber(data.files_indexed ?? data.filesIndexed) ?? prev.filesIndexed,
+                linesIndexed: parseNumber(data.lines_indexed ?? data.linesIndexed) ?? prev.linesIndexed,
                 symbols: parseNumber(data.symbols) ?? prev.symbols,
+                complexityAvg: parseNumber(data.complexity_avg) ?? prev.complexityAvg,
+                circularDependencies: parseNumber(data.circular_dependencies) ?? prev.circularDependencies,
+                mostComplexFunctions: data.most_complex_functions || prev.mostComplexFunctions,
                 cacheHitRate: parseNumber(data.cache_hit_rate ?? data.cacheHitRate) ?? prev.cacheHitRate,
                 lastIndexedAt: data.last_indexed_at || data.lastIndexedAt || prev.lastIndexedAt,
                 summary: data.summary || prev.summary,
               }))
               appendToolActivity({ name: "Project intelligence", status: data.status === "error" ? "error" : "done", message: data.summary || data.status })
+              appendStep({
+                name: data.summary || (typeof data.files_indexed === "number" ? `Explored ${data.files_indexed} files` : "Explored project"),
+                status: data.status === "error" ? "error" : "done",
+                description: data.workspace_path || data.workspacePath || data.status,
+              })
 
             } else if (data.type === "tool_activity") {
               appendToolActivity({
@@ -772,6 +771,7 @@ export function ChatShell() {
                 target: data.target || data.path,
                 durationMs: parseNumber(data.duration_ms ?? data.durationMs),
               })
+              appendStep({ id: data.id, name: data.name || data.tool || "Tool activity", status: data.status || "running", description: data.message || data.detail || data.target || data.path })
 
             } else if (data.type === "context_status") {
               setContextStatus({
@@ -782,6 +782,15 @@ export function ChatShell() {
                 cache: data.cache,
               })
 
+            } else if (data.type === "cognitive_update") {
+              setCognitiveState((prev: any) => ({
+                ...prev,
+                mode: data.mode || prev.mode,
+                energy_ledger: data.energy_ledger || prev.energy_ledger,
+                attractors: data.attractors || prev.attractors,
+                sampled_matrix: data.sampled_matrix || prev.sampled_matrix || Array(16).fill(0).map(() => Array(16).fill(0))
+              }))
+
             } else if (data.type === "runtime_hint" || data.type === "performance_hint") {
               const hint: RuntimeHint = { id: data.id || generateId(), label: data.label || data.name || "hint", value: String(data.value || data.message || ""), tone: data.tone || "neutral" }
               setRuntimeHints((prev) => [hint, ...prev.filter((item) => item.id !== hint.id)].slice(0, 6))
@@ -789,7 +798,7 @@ export function ChatShell() {
             } else if (data.type === "content") {
               // Direct content from agent (e.g. conversational reply)
               fullResponse += data.content || ""
-              updateContent(data.content || "")
+              setAssistantContent(extractFunctionCalls(fullResponse))
               
             } else if (data.type === "status") {
               if (data.status === "done") {
@@ -797,6 +806,7 @@ export function ChatShell() {
                 setAgentPhases((prev) => prev.map((phase) => ({ ...phase, status: phase.status === "error" ? "error" : "done", completedAt: phase.completedAt || new Date().toISOString() })))
                 setAgentState((prev) => ({ ...prev, status: "done", message: "Autonomous run complete", updatedAt: new Date().toISOString(), runtimeMs: startedAtRef.current ? Date.now() - startedAtRef.current : prev.runtimeMs }))
                 appendToolActivity({ name: "Autonomous run", status: "done", message: "Complete" })
+                appendStep({ id: "run-complete", name: "Autonomous run complete", status: "done", description: "Ready for review" })
                 setIsStreaming(false)
                 setTerminalLines(prev => [...prev, `✔ Autonomous run complete.`])
                 ws.close()
@@ -848,7 +858,7 @@ export function ChatShell() {
         setIsStreaming(false)
       }
     },
-    [messages, isStreaming, selectedModel, appendToolActivity, setPhaseStatus, workspacePath, agentState.phase],
+    [messages, isStreaming, selectedModel, appendToolActivity, setPhaseStatus, workspacePath, agentState.phase, planMode],
   )
 
   const retry = useCallback(() => {
@@ -896,21 +906,6 @@ export function ChatShell() {
           >
             <MessageSquareDashed className="w-4 h-4" />
           </Button>
-
-          <AgentWorkspaceHeader
-            agentState={agentState}
-            phases={agentPhases}
-            projectIntelligence={projectIntelligence}
-            contextStatus={contextStatus}
-            selectedModel={selectedModel}
-            backendConnected={backendConnected}
-            backendUrl={BACKEND_URL}
-            runtimeHints={runtimeHints}
-            diffStatus={diffStatus}
-            testStatus={testStatus}
-            onRetry={retry}
-            onReset={clearChat}
-          />
 
           <div className="flex-1 overflow-hidden">
             <MessageList 
@@ -985,14 +980,16 @@ export function ChatShell() {
 
           <div className="flex-shrink-0 border-t border-stone-200/60">
             <Composer
-              onSend={sendMessage}
-              onStop={stopStreaming}
-              isStreaming={isStreaming}
-              disabled={!!error}
-              selectedModel={selectedModel}
-              onModelChange={handleModelChange}
-              bottomOffset={terminalDock === "bottom" ? (terminalHeight + 24) : (isDraggingTerminal && terminalDock === "sidebar") ? 204 : 24}
-            />
+               onSend={sendMessage}
+               onStop={stopStreaming}
+               isStreaming={isStreaming}
+               disabled={!!error}
+               selectedModel={selectedModel}
+               onModelChange={handleModelChange}
+               planMode={planMode}
+               onPlanModeChange={setPlanMode}
+               bottomOffset={terminalDock === "bottom" ? (terminalHeight + 24) : (isDraggingTerminal && terminalDock === "sidebar") ? 204 : 24}
+             />
           </div>
         </div>
 
@@ -1040,6 +1037,8 @@ export function ChatShell() {
         selectedModel={selectedModel}
         backendUrl={BACKEND_URL}
         backendConnected={backendConnected}
+        cognitiveState={cognitiveState}
+        setCognitiveState={setCognitiveState}
       />
     </div>
   )

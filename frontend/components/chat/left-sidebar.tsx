@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { ChevronDown, Menu, X, Plus, MessageSquare, BookOpen, CheckSquare2, Settings, Palette } from 'lucide-react';
+import { ChevronDown, Menu, X, Plus, MessageSquare, BookOpen, CheckSquare2, Settings, Palette, FolderTree } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getAgentName } from '@/lib/persona-api';
 
@@ -109,7 +109,7 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
   }, []);
 
   // --- APPLE MINIMALIST SIDEBAR RESIZING ---
-  const [width, setWidth] = useState(260);
+  const [width, setWidth] = useState(248);
   const [isResizing, setIsResizing] = useState(false);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -156,7 +156,7 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
       <aside
         style={{ width: isOpen ? `${width}px` : '0px' }}
         className={cn(
-          "fixed lg:relative z-40 h-full bg-stone-50/50 flex flex-col overflow-hidden border-r border-stone-200/60 select-none relative shrink-0",
+          "fixed lg:relative z-40 h-full bg-white flex flex-col overflow-hidden border-r border-stone-200/70 select-none relative shrink-0",
           isResizing ? "transition-none" : "transition-all duration-300 ease-in-out",
           !isOpen && "border-none"
         )}
@@ -174,42 +174,44 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
         )}
 
         {/* Branding Header */}
-        <div className="px-5 pt-7 pb-4 flex items-center gap-2.5">
-          <div className="flex items-center justify-center shrink-0 w-6 h-6">
+        <div className="px-4 pt-5 pb-3 flex items-center gap-2.5">
+          <div className="flex items-center justify-center shrink-0 w-7 h-7">
             <Image
               src="/images/logo.png"
               alt="NARE Labs"
-              width={24}
-              height={24}
+              width={22}
+              height={22}
               quality={100}
               priority
               unoptimized
-              className="opacity-90 drop-shadow-sm object-contain"
+              className="opacity-90 object-contain"
             />
           </div>
-          <span className="text-[13.5px] font-semibold text-stone-800 tracking-tight">{agentName}</span>
-          <span className="text-[10px] font-medium text-stone-500 bg-stone-100 border border-stone-200/50 px-1.5 py-0.5 rounded-md ml-1 leading-none">Beta</span>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13.5px] font-medium tracking-[-0.01em] text-stone-600">{agentName}</div>
+            <div className="text-[11px] font-normal text-stone-400">Local coding workspace</div>
+          </div>
         </div>
 
         {/* New Chat Button */}
-        <div className="px-4 pb-2">
+        <div className="px-3 pb-3">
           <button
             onClick={handleNewChat}
-            className="w-full flex items-center justify-between px-3 py-2 bg-transparent hover:bg-stone-100/60 transition-colors rounded-[10px] group"
+            className="w-full flex items-center justify-between rounded-xl border border-stone-200/70 bg-stone-50/50 px-3 py-2 text-left transition-colors hover:bg-stone-100/70 group"
           >
-            <span className="text-[13px] font-medium text-stone-600 group-hover:text-stone-900 transition-colors">New Chat</span>
+            <span className="text-[13px] font-normal text-stone-650 group-hover:text-stone-900 transition-colors">New Chat</span>
             <Plus strokeWidth={1.5} size={16} className="text-stone-400 group-hover:text-stone-600 transition-colors" />
           </button>
         </div>
 
         {/* Main Navigation */}
-        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-4 no-scrollbar">
+        <div className="flex-1 overflow-y-auto px-2.5 py-2 space-y-5 no-scrollbar">
 
           {/* Main Links */}
           <div className="space-y-0.5">
             {[
               { icon: MessageSquare, label: 'Chat', href: '/chat' },
-              { icon: Palette, label: 'Personas', href: '/personas' },
+              { icon: FolderTree, label: 'Workflow', href: '/workflow' },
               { icon: BookOpen, label: 'Wiki', href: '/wiki' },
               { icon: CheckSquare2, label: 'Review', href: '/review' },
               { icon: Settings, label: 'Settings', href: '/settings' },
@@ -222,11 +224,11 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
                   className={cn(
                     "w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 border border-transparent",
                     active
-                      ? 'bg-white shadow-[0_1px_8px_rgba(0,0,0,0.02)] border-stone-200/30 text-stone-900 font-medium'
-                      : 'text-stone-500 hover:bg-stone-200/20 hover:text-stone-900'
+                      ? 'bg-stone-100/80 border-stone-200/60 text-stone-900'
+                      : 'text-stone-500 hover:bg-stone-50 hover:text-stone-900'
                   )}
                 >
-                  <Icon size={16} strokeWidth={active ? 1.5 : 1.5} className={active ? 'text-stone-850' : 'text-stone-400'} />
+                  <Icon size={16} strokeWidth={1.5} className={active ? 'text-stone-800' : 'text-stone-400'} />
                   <span className="text-[13px] font-normal">{label}</span>
                 </Link>
               );
@@ -239,7 +241,7 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
               onClick={() => toggleSection('sessions')}
               className="w-full flex items-center justify-between px-3 py-1.5 group"
             >
-              <span className="text-[11px] font-semibold text-stone-400/70 uppercase tracking-wider group-hover:text-stone-500 transition-colors">Sessions</span>
+              <span className="text-[11px] font-normal text-stone-400 uppercase tracking-[0.14em] group-hover:text-stone-500 transition-colors">Sessions</span>
               <ChevronDown
                 strokeWidth={1.5}
                 size={14}
@@ -258,8 +260,8 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
                       className={cn(
                         "w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-colors text-left",
                         isActive
-                          ? 'bg-stone-200/30 text-stone-900 font-medium'
-                          : 'text-stone-500 hover:bg-stone-200/20 hover:text-stone-900'
+                          ? 'bg-stone-100 text-stone-900'
+                          : 'text-stone-500 hover:bg-stone-50 hover:text-stone-900'
                       )}
                     >
                       <div className="flex-1 truncate text-[13px] font-normal">{session.label}</div>
@@ -276,7 +278,7 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
               onClick={() => toggleSection('recent')}
               className="w-full flex items-center justify-between px-3 py-1.5 group"
             >
-              <span className="text-[11px] font-semibold text-stone-400/70 uppercase tracking-wider group-hover:text-stone-500 transition-colors">Recent Commands</span>
+              <span className="text-[11px] font-normal text-stone-400 uppercase tracking-[0.14em] group-hover:text-stone-500 transition-colors">Recent Commands</span>
               <ChevronDown
                 strokeWidth={1.5}
                 size={14}
@@ -290,7 +292,7 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
                   <button
                     key={index}
                     onClick={() => handleCommandClick(cmd)}
-                    className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-stone-500 hover:bg-stone-200/20 hover:text-stone-900 transition-colors text-left"
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-stone-500 hover:bg-stone-50 hover:text-stone-900 transition-colors text-left"
                     title="Click to paste command into terminal"
                   >
                     <div className="flex-1 min-w-0">
@@ -304,10 +306,10 @@ export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-stone-100/80">
-          <button className="w-full flex items-center gap-3 px-3 py-2 text-stone-500 hover:bg-stone-200/20 hover:text-stone-900 rounded-xl transition-colors">
-            <div className="w-6 h-6 rounded-full bg-stone-100 flex items-center justify-center shrink-0">
-              <span className="text-[10px] font-medium text-stone-500">D</span>
+        <div className="p-3 border-t border-stone-100">
+          <button className="w-full flex items-center gap-3 px-3 py-2 text-stone-500 hover:bg-stone-50 hover:text-stone-900 rounded-xl transition-colors">
+            <div className="w-6 h-6 rounded-full bg-stone-100 border border-stone-200/60 flex items-center justify-center shrink-0">
+              <span className="text-[10px] font-normal text-stone-500">D</span>
             </div>
             <span className="text-[13px] font-normal">Danik</span>
           </button>
