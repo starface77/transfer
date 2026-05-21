@@ -7,10 +7,10 @@ Provides intelligent debugging capabilities:
 - Coverage analysis
 """
 
-from .debugger_integration import DebuggerIntegration, BreakpointStrategy
+from .debugger import DebuggerIntegration, BreakpointStrategy
 from .profiler import Profiler, ProfileResult, BottleneckReport
 from .test_generator import TestGenerator, TestCase, TestSuite
-from .coverage_analyzer import CoverageAnalyzer, CoverageReport
+from .coverage import CoverageAnalyzer, CoverageReport
 
 __all__ = [
     "DebuggerIntegration",

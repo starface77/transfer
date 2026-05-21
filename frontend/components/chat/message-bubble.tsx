@@ -55,11 +55,13 @@ function stripRawFunctionCalls(content: string) {
 
 function getActivityKind(step: ToolStep): AgentActivityKind {
   const text = `${step.name} ${step.description || ""}`.toLowerCase()
+  // Tool call patterns — Devin-style: "Edited path/file.py +N", "Read path/file.py"
+  if (/^edited\s/.test(text) || /\+\d+\s*$/.test(step.name)) return "file"
   if (/\.(tsx?|jsx?|css|scss|py|html|md|json|ya?ml|mjs|cjs)\b/.test(text) || /\+\d+\s*[−-]\d+/.test(text)) return "file"
-  if (/think|reason|plan|context|reading/.test(text)) return "thinking"
-  if (/search|explor|inspect|scan|index|read|find|grep|rg|list/.test(text)) return "searching"
-  if (/test|verify|build|lint|pytest|npm|check/.test(text)) return "testing"
-  if (/tool|command|terminal|patch|diff|edit|prepared/.test(text)) return "tool"
+  if (/^thought\b|think|reason|plan|context|^memory\s/.test(text)) return "thinking"
+  if (/^read\s|search|explor|inspect|^scan\s|index|find|grep|rg|list/.test(text)) return "searching"
+  if (/test|verify|build|lint|pytest|npm|check|^run tests/.test(text)) return "testing"
+  if (/tool|command|^terminal|patch|diff|edit|prepared/.test(text)) return "tool"
   return "working"
 }
 
@@ -148,15 +150,25 @@ function AgentTimelineRow({ step, index, onOpenDiff }: { step: ToolStep; index: 
         {isRunning ? getStepIcon(step.status) : step.status === "error" ? getStepIcon(step.status) : <KindIcon strokeWidth={1.5} className="h-3.5 w-3.5 text-stone-400" />}
       </div>
       <div className="min-w-0 flex-1 text-[13px] font-normal leading-5 text-stone-500">
-        <span className="text-stone-400">{getKindLabel(kind)}</span>
-        <span className={cn("ml-2 font-medium", step.status === "error" ? "text-red-600" : "text-stone-700")}>
-          {(isFilePatch || isFileKind) && !step.name.includes(" ") ? (
-             <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5 bg-stone-100 text-stone-700 border border-stone-200/60 rounded-md text-[11.5px] font-mono shadow-[0_1px_2px_rgba(0,0,0,0.02)] translate-y-[-1px] transition-colors">
-               <FileCode size={12} className="text-stone-400" />
-               {step.name}
-             </span>
-          ) : step.name}
-        </span>
+        {step.id?.startsWith("tool-call-") ? (
+          <>
+            <span className={cn("font-medium", step.status === "error" ? "text-red-600" : "text-stone-700")}>
+              {step.name}
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="text-stone-400">{getKindLabel(kind)}</span>
+            <span className={cn("ml-2 font-medium", step.status === "error" ? "text-red-600" : "text-stone-700")}>
+              {(isFilePatch || isFileKind) && !step.name.includes(" ") ? (
+                 <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5 bg-stone-100 text-stone-700 border border-stone-200/60 rounded-md text-[11.5px] font-mono shadow-[0_1px_2px_rgba(0,0,0,0.02)] translate-y-[-1px] transition-colors">
+                   <FileCode size={12} className="text-stone-400" />
+                   {step.name}
+                 </span>
+              ) : step.name}
+            </span>
+          </>
+        )}
         
         {shouldShowDescription && (
           <div className="mt-1">

@@ -1,11 +1,13 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, Suspense } from "react"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Loader2, FolderTree, RotateCw } from "lucide-react"
+import { ArrowLeft, Loader2, FolderTree, RotateCw, Search, X, FileCode, Save } from "lucide-react"
 import { FileTree, type FileNode } from "@/components/workflow/file-tree"
 import { CodeViewer } from "@/components/workflow/code-viewer"
 import { LeftSidebar } from "@/components/chat/left-sidebar"
+import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000"
 
@@ -18,6 +20,76 @@ export default function WorkflowPage() {
   const [fileContent, setFileContent] = useState<string | null>(null)
   const [isLoadingFile, setIsLoadingFile] = useState(false)
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editContent, setEditContent] = useState("")
+  const [isSaving, setIsSaving] = useState(false)
+
+  const handleSearch = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([])
+      return
+    }
+    setIsSearching(true)
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, scope: "code", max_results: 30 }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setSearchResults(data.results || [])
+      }
+    } catch {
+      setSearchResults([])
+    } finally {
+      setIsSearching(false)
+    }
+  }, [])
+
+  const handleSearchSelect = (result: any) => {
+    handleSelectFile(result.file, result.file.split("/").pop() || result.file)
+    setShowSearch(false)
+  }
+
+  const handleStartEdit = () => {
+    if (fileContent) {
+      setEditContent(fileContent)
+      setIsEditing(true)
+    }
+  }
+
+  const handleSaveFile = async () => {
+    if (!selectedFilePath) return
+    setIsSaving(true)
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/files`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: selectedFilePath, content: editContent }),
+      })
+      if (res.ok) {
+        setFileContent(editContent)
+        setIsEditing(false)
+        toast.success("File saved")
+      } else {
+        toast.error("Failed to save file")
+      }
+    } catch (err) {
+      toast.error("Save error")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleCancelEdit = () => {
+    setIsEditing(false)
+    setEditContent("")
+  }
 
   const fetchTree = async () => {
     setIsLoadingTree(true)
@@ -61,7 +133,9 @@ export default function WorkflowPage() {
 
   return (
     <div className="h-dvh bg-background flex overflow-hidden">
-      <LeftSidebar isOpen={leftSidebarOpen} onToggle={() => setLeftSidebarOpen(!leftSidebarOpen)} />
+      <Suspense>
+        <LeftSidebar isOpen={leftSidebarOpen} onToggle={() => setLeftSidebarOpen(!leftSidebarOpen)} />
+      </Suspense>
 
       <div className="flex-1 flex flex-col overflow-hidden bg-white font-sans relative z-10">
         {/* Header */}
@@ -73,50 +147,158 @@ export default function WorkflowPage() {
             </div>
           </div>
           
-          <button 
-            onClick={fetchTree}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-stone-500 hover:text-stone-700 bg-stone-50 hover:bg-stone-100 border border-stone-200/60 rounded-md transition-colors"
-            disabled={isLoadingTree}
-          >
-            <RotateCw size={13} className={isLoadingTree ? "animate-spin" : ""} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowSearch(!showSearch)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium border rounded-md transition-colors",
+                showSearch
+                  ? "text-stone-700 bg-stone-100 border-stone-300"
+                  : "text-stone-500 hover:text-stone-700 bg-stone-50 hover:bg-stone-100 border-stone-200/60"
+              )}
+            >
+              <Search size={13} />
+              Search
+            </button>
+            {selectedFilePath && !isEditing && (
+              <button
+                onClick={handleStartEdit}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-stone-500 hover:text-stone-700 bg-stone-50 hover:bg-stone-100 border border-stone-200/60 rounded-md transition-colors"
+              >
+                <FileCode size={13} />
+                Edit
+              </button>
+            )}
+            {isEditing && (
+              <>
+                <button
+                  onClick={handleSaveFile}
+                  disabled={isSaving}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-white bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 rounded-md transition-colors"
+                >
+                  <Save size={13} />
+                  {isSaving ? "Saving..." : "Save"}
+                </button>
+                <button
+                  onClick={handleCancelEdit}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-stone-500 hover:text-stone-700 bg-stone-50 hover:bg-stone-100 border border-stone-200/60 rounded-md transition-colors"
+                >
+                  <X size={13} />
+                  Cancel
+                </button>
+              </>
+            )}
+            <button 
+              onClick={fetchTree}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-stone-500 hover:text-stone-700 bg-stone-50 hover:bg-stone-100 border border-stone-200/60 rounded-md transition-colors"
+              disabled={isLoadingTree}
+            >
+              <RotateCw size={13} className={isLoadingTree ? "animate-spin" : ""} />
+              Refresh
+            </button>
+          </div>
         </header>
 
         {/* Main Content */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Sidebar - File Tree */}
+          {/* Sidebar - File Tree + Search */}
           <div className="w-[280px] bg-[#fafafa] flex flex-col shrink-0">
-            <div className="px-4 py-3 flex items-center text-[12.5px] font-medium text-stone-600">
-              Workspace Files
-            </div>
-            <div className="flex-1 overflow-y-auto px-2 pb-4">
-              {isLoadingTree ? (
-                <div className="flex flex-col items-center justify-center h-32 text-stone-400 gap-2">
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span className="text-[12px]">Loading tree...</span>
+            {showSearch ? (
+              <>
+                <div className="px-3 py-2.5 border-b border-stone-200/60">
+                  <div className="flex items-center gap-2 bg-white border border-stone-200 rounded-lg px-3 py-2">
+                    <Search size={14} className="text-stone-400 shrink-0" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value)
+                        handleSearch(e.target.value)
+                      }}
+                      placeholder="Search code..."
+                      className="flex-1 text-[12px] bg-transparent outline-none text-stone-700 placeholder:text-stone-400"
+                      autoFocus
+                    />
+                    {searchQuery && (
+                      <button onClick={() => { setSearchQuery(""); setSearchResults([]) }}>
+                        <X size={12} className="text-stone-400 hover:text-stone-600" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              ) : treeData ? (
-                <FileTree 
-                  node={treeData} 
-                  onSelectFile={handleSelectFile} 
-                  selectedPath={selectedFilePath} 
-                />
-              ) : (
-                <div className="p-4 text-center text-[12px] text-stone-500">
-                  Failed to load workspace tree.
+                <div className="flex-1 overflow-y-auto">
+                  {isSearching ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-4 h-4 animate-spin text-stone-400" />
+                    </div>
+                  ) : searchResults.length > 0 ? (
+                    <div className="divide-y divide-stone-100">
+                      {searchResults.map((r, i) => (
+                        <button
+                          key={i}
+                          onClick={() => handleSearchSelect(r)}
+                          className="w-full text-left px-3 py-2 hover:bg-stone-100/80 transition-colors"
+                        >
+                          <div className="text-[11px] font-mono text-stone-500 truncate">{r.file}:{r.line}</div>
+                          <div className="text-[11.5px] text-stone-700 truncate mt-0.5">{r.match}</div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : searchQuery ? (
+                    <div className="text-center py-8 text-[12px] text-stone-400">No results</div>
+                  ) : (
+                    <div className="text-center py-8 text-[12px] text-stone-400">Type to search code</div>
+                  )}
                 </div>
-              )}
-            </div>
+              </>
+            ) : (
+              <>
+                <div className="px-4 py-3 flex items-center text-[12.5px] font-medium text-stone-600">
+                  Workspace Files
+                </div>
+                <div className="flex-1 overflow-y-auto px-2 pb-4">
+                  {isLoadingTree ? (
+                    <div className="flex flex-col items-center justify-center h-32 text-stone-400 gap-2">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span className="text-[12px]">Loading tree...</span>
+                    </div>
+                  ) : treeData ? (
+                    <FileTree 
+                      node={treeData} 
+                      onSelectFile={handleSelectFile} 
+                      selectedPath={selectedFilePath} 
+                    />
+                  ) : (
+                    <div className="p-4 text-center text-[12px] text-stone-500">
+                      Failed to load workspace tree.
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
 
-          {/* Main - Code Viewer */}
+          {/* Main - Code Viewer or Editor */}
           <div className="flex-1 overflow-hidden bg-white">
-            <CodeViewer 
-              filename={selectedFilePath} 
-              content={fileContent} 
-              isLoading={isLoadingFile} 
-            />
+            {isEditing && selectedFilePath ? (
+              <div className="h-full flex flex-col">
+                <div className="h-10 border-b border-stone-200/60 flex items-center px-4 bg-amber-50/50 shrink-0">
+                  <span className="text-[12px] font-medium text-amber-700">Editing: {selectedFilePath.split("/").pop()}</span>
+                </div>
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  className="flex-1 w-full p-4 font-mono text-[12.5px] leading-relaxed bg-white text-stone-800 outline-none resize-none"
+                  spellCheck={false}
+                />
+              </div>
+            ) : (
+              <CodeViewer 
+                filename={selectedFilePath} 
+                content={fileContent} 
+                isLoading={isLoadingFile} 
+              />
+            )}
           </div>
         </div>
       </div>

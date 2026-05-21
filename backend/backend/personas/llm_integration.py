@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .persona_system import PersonaManager
+    from .system import PersonaManager
 
 
 def integrate_persona_with_llm(llm_module: object, persona_manager: PersonaManager) -> None:

@@ -7,7 +7,7 @@ to decompose tasks and understand codebase structure.
 from pathlib import Path
 
 from backend.planning import HierarchicalPlanner, PlanningContext, ProgressTracker
-from backend.code_analysis import DependencyAnalyzer, SemanticGraph, SemanticGraphBuilder
+from backend.analysis import DependencyAnalyzer, SemanticGraph, SemanticGraphBuilder
 
 
 def demo_hierarchical_planning():

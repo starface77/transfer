@@ -1,10 +1,11 @@
 "use client"
 
 import React, { useState, useEffect, useCallback } from "react"
-import { Terminal as TerminalIcon, BookOpen, Settings, Cpu, Wifi, ArrowDownToLine, CheckSquare2, AlertTriangle, CheckCircle2, CircleDashed, Loader2, Brain } from "lucide-react"
+import { Terminal as TerminalIcon, BookOpen, Settings, Cpu, Wifi, ArrowDownToLine, CheckSquare2, AlertTriangle, CheckCircle2, CircleDashed, Loader2, Brain, Wrench } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TerminalEmulator } from "./terminal-emulator"
 import { AgentTasks } from "./agent-tasks"
+import { ToolsPanel } from "./tools-panel"
 import type { AgentState, AgentPhase, ProjectIntelligence, ToolActivity, ContextStatus, RuntimeHint, DiffStatus, TestStatus, PhaseStatus } from "./chat-shell"
 
 function formatDuration(ms?: number) {
@@ -192,6 +193,7 @@ export function RightSidebar({
 
   const tabs = [
     { id: "terminal", label: "Terminal", icon: TerminalIcon },
+    { id: "tools", label: "Tools", icon: Wrench },
     { id: "tasks", label: "Tasks", icon: CheckSquare2 },
     { id: "logs", label: "Logs", icon: BookOpen },
     { id: "info", label: "Info", icon: Settings },
@@ -219,7 +221,7 @@ export function RightSidebar({
         )}
 
         <div className="px-4 py-3 border-b border-stone-200/70 bg-white shrink-0">
-          <div className="grid grid-cols-4 gap-1 rounded-xl border border-stone-200/70 bg-stone-50/70 p-1">
+          <div className="grid grid-cols-5 gap-1 rounded-xl border border-stone-200/70 bg-stone-50/70 p-1">
             {tabs.map((tab) => {
               const IconComponent = tab.icon
               const isActive = activeTab === tab.id
@@ -299,6 +301,13 @@ export function RightSidebar({
                   </button>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* TOOLS VIEW */}
+          {activeTab === "tools" && (
+            <div className="h-full overflow-y-auto">
+              <ToolsPanel />
             </div>
           )}
 

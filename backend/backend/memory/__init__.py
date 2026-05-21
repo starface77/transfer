@@ -2,20 +2,13 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-BACKEND_DIR = Path(__file__).resolve().parent.parent
-for relative in ("memory/rld/src", "memory/dsm/src"):
-    candidate = BACKEND_DIR / relative
-    if candidate.exists() and str(candidate) not in sys.path:
-        sys.path.insert(0, str(candidate))
-
 try:
-    from dsm.memory import DynamicSegmentedMemory
-    from dsm.models import ActiveContext
-    from rld.core import RecursiveLatentDNA
-    from rld.models import RLDContext
+    from memory.dsm.memory import DynamicSegmentedMemory
+    from memory.dsm.models import ActiveContext
+    from memory.rld.core import RecursiveLatentDNA
+    from memory.rld.models import RLDContext
 except ImportError as import_error:
     DynamicSegmentedMemory = None
     ActiveContext = None
@@ -25,7 +18,7 @@ except ImportError as import_error:
 else:
     IMPORT_ERROR = None
 
-from .memory_field import MemoryField
+from .field import MemoryField
 
 
 from config import AgentConfig, load_config
@@ -42,7 +35,7 @@ class MemoryBridge:
         self.dsm = None
         
         # Instantiate memory field and trace memory
-        from .trace_memory import TraceMemory
+        from .trace import TraceMemory
         self.memory_field = MemoryField(self.memory_dir / "memory_field.json", default_dim=128)
         self.trace_memory = TraceMemory(self.memory_dir / "trace_memory.json")
         
@@ -66,10 +59,10 @@ class MemoryBridge:
             try:
                 embedding = self.rld.embedding_model.encode(task)
             except Exception:
-                from dsm.embedding import HashEmbeddingModel
+                from memory.dsm.embedding import HashEmbeddingModel
                 embedding = HashEmbeddingModel().encode(task)
         else:
-            from dsm.embedding import HashEmbeddingModel
+            from memory.dsm.embedding import HashEmbeddingModel
             embedding = HashEmbeddingModel().encode(task)
 
         # 2. Query trace memory (Trace Replay)
@@ -177,10 +170,10 @@ class MemoryBridge:
             try:
                 embedding = self.rld.embedding_model.encode(task)
             except Exception:
-                from dsm.embedding import HashEmbeddingModel
+                from memory.dsm.embedding import HashEmbeddingModel
                 embedding = HashEmbeddingModel().encode(task)
         else:
-            from dsm.embedding import HashEmbeddingModel
+            from memory.dsm.embedding import HashEmbeddingModel
             embedding = HashEmbeddingModel().encode(task)
 
         # Store in trace memory

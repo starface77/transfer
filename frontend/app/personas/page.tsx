@@ -5,6 +5,9 @@ import { LeftSidebar } from "@/components/chat/left-sidebar"
 import { RightSidebar } from "@/components/chat/right-sidebar"
 import { Palette, Check, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { toast } from "sonner"
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000"
 
 interface Persona {
   id: string
@@ -129,15 +132,16 @@ export default function PersonasPage() {
 
     // Send to backend
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/personas/activate', {
+      const response = await fetch(`${BACKEND_URL}/api/personas/activate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ persona_id: personaId }),
       })
       const data = await response.json()
-      console.log('Persona activated:', data)
+      const persona = personas.find(p => p.id === personaId)
+      toast.success(`Persona: ${persona?.name || personaId}`)
     } catch (error) {
-      console.error('Failed to activate persona:', error)
+      toast.error('Failed to activate persona')
     }
 
     // Dispatch event for other components to update agent name

@@ -1,6 +1,6 @@
 """Persona system for thematic agent customization."""
 
-from .persona_system import (
+from .system import (
     PersonaConfig,
     PersonaManager,
     activate_persona,

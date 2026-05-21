@@ -3,7 +3,8 @@
 import React, { useState, useEffect, Suspense } from "react"
 import { LeftSidebar } from "@/components/chat/left-sidebar"
 import { RightSidebar } from "@/components/chat/right-sidebar"
-import { Sliders, Shield, Folder, RefreshCw, Cpu } from "lucide-react"
+import { Sliders, Shield, Folder, RefreshCw, Cpu, Key, CheckCircle2, XCircle, Loader2 } from "lucide-react"
+import { toast } from "sonner"
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000"
 
@@ -15,6 +16,47 @@ export default function SettingsPage() {
   const [workspacePath, setWorkspacePath] = useState("")
   const [selectedModel, setSelectedModel] = useState("google/gemini-2.5-flash")
   const [dsmSize, setDsmSize] = useState("12,408 active chunks")
+  const [apiKeys, setApiKeys] = useState<Record<string, boolean>>({})
+  const [keyInputs, setKeyInputs] = useState<Record<string, string>>({})
+  const [savingKey, setSavingKey] = useState<string | null>(null)
+
+  // Fetch API keys status
+  useEffect(() => {
+    const fetchKeys = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/keys`)
+        if (res.ok) {
+          const data = await res.json()
+          setApiKeys(data.providers || {})
+        }
+      } catch {}
+    }
+    fetchKeys()
+  }, [])
+
+  const handleSaveKey = async (provider: string) => {
+    const key = keyInputs[provider]
+    if (!key?.trim()) return
+    setSavingKey(provider)
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/keys`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, api_key: key.trim() }),
+      })
+      if (res.ok) {
+        setApiKeys((prev) => ({ ...prev, [provider]: true }))
+        setKeyInputs((prev) => ({ ...prev, [provider]: "" }))
+        toast.success(`${provider} API key saved`)
+      } else {
+        toast.error(`Failed to save ${provider} key`)
+      }
+    } catch {
+      toast.error("Connection error")
+    } finally {
+      setSavingKey(null)
+    }
+  }
 
   // Sync state with localStorage and backend on mount
   useEffect(() => {
@@ -52,12 +94,12 @@ export default function SettingsPage() {
       })
       const data = await response.json()
       if (data.status === "success") {
-        alert("Settings saved successfully and synced with backend!")
+        toast.success("Settings saved and synced with backend")
       } else {
-        alert(`Settings saved locally, but backend error: ${data.message}`)
+        toast.error(`Backend error: ${data.message}`)
       }
     } catch (err: any) {
-      alert(`Settings saved locally, but failed to sync with backend: ${err.message}`)
+      toast.error(`Failed to sync: ${err.message}`)
     }
   }
 
@@ -144,6 +186,44 @@ export default function SettingsPage() {
                 </button>
               </div>
 
+            </div>
+
+            {/* API Keys Card */}
+            <div className="border border-stone-200/60 bg-white rounded-2xl p-6 shadow-[0_1px_8px_rgba(0,0,0,0.01)] space-y-5">
+              <div className="flex items-center gap-2 text-stone-700">
+                <Key className="w-4 h-4 text-stone-400" />
+                <span className="text-[13px] font-medium">API Keys</span>
+              </div>
+              <p className="text-[11px] text-stone-400">Configure API keys for LLM providers. Keys are stored in the backend session only.</p>
+
+              {["gemini", "openai", "anthropic", "openrouter"].map((provider) => (
+                <div key={provider} className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] font-medium text-stone-600 capitalize">{provider}</span>
+                    {apiKeys[provider] ? (
+                      <CheckCircle2 size={13} className="text-emerald-500" />
+                    ) : (
+                      <XCircle size={13} className="text-stone-300" />
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={keyInputs[provider] || ""}
+                      onChange={(e) => setKeyInputs((prev) => ({ ...prev, [provider]: e.target.value }))}
+                      placeholder={apiKeys[provider] ? "••••••• (configured)" : `Enter ${provider} API key`}
+                      className="flex-1 p-2.5 border border-stone-200 rounded-xl text-[12px] font-mono focus:outline-none focus:border-stone-400 transition-colors bg-stone-50/50"
+                    />
+                    <button
+                      onClick={() => handleSaveKey(provider)}
+                      disabled={!keyInputs[provider]?.trim() || savingKey === provider}
+                      className="px-3 py-2 bg-stone-900 hover:bg-stone-800 disabled:bg-stone-300 text-white rounded-xl text-[11px] transition-colors"
+                    >
+                      {savingKey === provider ? <Loader2 size={12} className="animate-spin" /> : "Save"}
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
 
           </div>

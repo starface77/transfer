@@ -773,6 +773,48 @@ export function ChatShell() {
               })
               appendStep({ id: data.id, name: data.name || data.tool || "Tool activity", status: data.status || "running", description: data.message || data.detail || data.target || data.path })
 
+            } else if (data.type === "tool_call") {
+              // Devin-style tool invocation display
+              const toolLabels: Record<string, string> = {
+                scan_workspace: "Scan workspace",
+                read_file: "Read",
+                write_file: "Edited",
+                analyze_dependencies: "Analyze dependencies",
+                memory_recall: "Memory recall",
+                memory_store: "Memory store",
+                llm_generate: "Thought",
+                terminal: "Terminal",
+                run_tests: "Run tests",
+                search_code: "Search",
+                git_diff: "Git diff",
+              }
+              const label = toolLabels[data.tool] || data.tool
+              const target = data.target || ""
+              const detail = data.detail || ""
+              const linesChanged = data.lines_changed || 0
+              const stepName = linesChanged > 0
+                ? `${label} ${target} +${linesChanged}`
+                : target
+                  ? `${label} ${target}`
+                  : label
+              const stepDetail = detail || (data.status === "running" ? "Working..." : "Done")
+              const stepId = `tool-call-${data.tool}-${target}`
+
+              appendStep({
+                id: stepId,
+                name: stepName,
+                status: data.status === "error" ? "error" : data.status === "running" ? "running" : "done",
+                description: stepDetail,
+              })
+              appendToolActivity({
+                id: stepId,
+                name: label,
+                status: data.status === "error" ? "error" : data.status === "running" ? "running" : "done",
+                message: `${target} ${detail}`.trim(),
+                target: target,
+              })
+              setTerminalLines(prev => [...prev, `[${label.toUpperCase()}] ${target} ${detail}`])
+
             } else if (data.type === "context_status") {
               setContextStatus({
                 usedTokens: parseNumber(data.used_tokens ?? data.usedTokens),

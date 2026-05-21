@@ -36,22 +36,20 @@ if str(REPO_ROOT) not in sys.path:
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-# Import integrations & memory paths (they live inside BACKEND_DIR)
+# Import integrations paths (they live inside BACKEND_DIR)
 for relative in (
     "integrations/semanticgit/src",
     "integrations/lazystandup/src",
-    "memory/rld/src",
-    "memory/dsm/src",
 ):
     candidate = BACKEND_DIR / relative
     if candidate.exists() and str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-from backend.agent import PHASES, SharrowkinAgent
+from backend.core.agent import PHASES, SharrowkinAgent
 from backend.personas import get_persona_manager, activate_persona, deactivate_persona, get_agent_name
 
 try:
-    from cognition.fieldscript.fieldscript_v1 import FieldScript
+    from cognition.fieldscript.engine import FieldScript
 except ImportError:
     FieldScript = None
 
@@ -307,7 +305,7 @@ async def chat_endpoint(request: Request):
         logs = f.getvalue()
 
     # Generate an actual LLM response via the agent's Gemini client
-    from backend.agent import SharrowkinAgent
+    from backend.core.agent import SharrowkinAgent
     from backend.config import load_config
     try:
         config = load_config(SETTINGS.workspace_path)
@@ -331,7 +329,7 @@ class InlineAIRequest(BaseModel):
 
 @app.post("/api/inline-ai")
 def inline_ai_endpoint(req: InlineAIRequest):
-    from backend.agent import SharrowkinAgent
+    from backend.core.agent import SharrowkinAgent
     from backend.config import load_config
     try:
         config = load_config(SETTINGS.workspace_path)
@@ -754,6 +752,257 @@ def get_workspace_tree():
     }
 
 
+# ─── Tools Registry ───────────────────────────────────────────────
+
+AGENT_TOOLS = [
+    {
+        "name": "scan_workspace",
+        "description": "Scan and index all source files in the workspace",
+        "category": "workspace",
+        "parameters": [],
+    },
+    {
+        "name": "read_file",
+        "description": "Read contents of a specific file",
+        "category": "workspace",
+        "parameters": [{"name": "path", "type": "string", "required": True}],
+    },
+    {
+        "name": "list_files",
+        "description": "List files in a directory",
+        "category": "workspace",
+        "parameters": [{"name": "subdir", "type": "string", "required": False}],
+    },
+    {
+        "name": "apply_changes",
+        "description": "Apply code changes to files and generate a patch",
+        "category": "code",
+        "parameters": [{"name": "changes", "type": "array", "required": True}],
+    },
+    {
+        "name": "git_diff",
+        "description": "Show uncommitted git changes in the workspace",
+        "category": "code",
+        "parameters": [],
+    },
+    {
+        "name": "run_pytest",
+        "description": "Run pytest test suite in the workspace",
+        "category": "testing",
+        "parameters": [{"name": "timeout", "type": "integer", "required": False}],
+    },
+    {
+        "name": "run_terminal_command",
+        "description": "Execute an arbitrary shell command in the workspace",
+        "category": "testing",
+        "parameters": [{"name": "command", "type": "string", "required": True}],
+    },
+    {
+        "name": "search_web",
+        "description": "Search the web using DuckDuckGo",
+        "category": "web",
+        "parameters": [{"name": "query", "type": "string", "required": True}],
+    },
+    {
+        "name": "fetch_url",
+        "description": "Fetch and extract text content from a URL",
+        "category": "web",
+        "parameters": [{"name": "url", "type": "string", "required": True}],
+    },
+    {
+        "name": "dependency_analysis",
+        "description": "Analyze import dependencies and detect circular references",
+        "category": "code",
+        "parameters": [],
+    },
+    {
+        "name": "semantic_graph",
+        "description": "Build semantic code graph with symbols and relationships",
+        "category": "code",
+        "parameters": [],
+    },
+    {
+        "name": "memory_query",
+        "description": "Query DSM/RLD memory systems for relevant context",
+        "category": "memory",
+        "parameters": [{"name": "query", "type": "string", "required": True}],
+    },
+]
+
+
+@app.get("/api/tools")
+def list_tools():
+    """Return the registry of available agent tools."""
+    return {"tools": AGENT_TOOLS, "total": len(AGENT_TOOLS)}
+
+
+# ─── File CRUD ────────────────────────────────────────────────────
+
+class FileSaveRequest(BaseModel):
+    path: str = Field(..., min_length=1)
+    content: str
+
+
+class SearchRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    scope: str = "code"  # "code" | "files" | "symbols"
+    max_results: int = 50
+
+
+@app.get("/api/files")
+def get_file(path: str):
+    """Read a file from the workspace."""
+    workspace = Path(SETTINGS.workspace_path)
+    target = (workspace / path).resolve()
+    if workspace.resolve() not in target.parents and target != workspace.resolve():
+        return {"error": "Path escapes workspace"}
+    if not target.exists() or not target.is_file():
+        return {"error": "File not found"}
+    try:
+        content = target.read_text(encoding="utf-8", errors="replace")
+        suffix = target.suffix.lstrip(".")
+        lang_map = {
+            "py": "python", "ts": "typescript", "tsx": "typescript",
+            "js": "javascript", "jsx": "javascript", "json": "json",
+            "md": "markdown", "css": "css", "html": "html",
+            "yaml": "yaml", "yml": "yaml", "toml": "toml",
+        }
+        return {
+            "content": content,
+            "language": lang_map.get(suffix, suffix),
+            "lines": content.count("\n") + 1,
+            "size": len(content),
+            "path": str(target.relative_to(workspace)),
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+@app.put("/api/files")
+def save_file(req: FileSaveRequest):
+    """Save/update a file in the workspace."""
+    workspace = Path(SETTINGS.workspace_path)
+    target = (workspace / req.path).resolve()
+    if workspace.resolve() not in target.parents and target != workspace.resolve():
+        return {"error": "Path escapes workspace"}
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(req.content, encoding="utf-8")
+        return {"status": "success", "path": str(target.relative_to(workspace)), "size": len(req.content)}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+@app.post("/api/search")
+def search_code(req: SearchRequest):
+    """Search across workspace files."""
+    workspace = Path(SETTINGS.workspace_path)
+    if not workspace.exists():
+        return {"results": [], "total": 0}
+
+    results = []
+    query_lower = req.query.lower()
+    text_suffixes = {".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".toml", ".yml", ".yaml", ".css", ".html"}
+    ignored_dirs = {".git", "node_modules", "__pycache__", ".next", "dist", "venv", ".venv", "build"}
+
+    for root, dirs, files in os.walk(workspace):
+        dirs[:] = [d for d in dirs if d not in ignored_dirs]
+        for fname in files:
+            if len(results) >= req.max_results:
+                break
+            fpath = Path(root) / fname
+            if fpath.suffix not in text_suffixes:
+                continue
+
+            rel_path = str(fpath.relative_to(workspace))
+
+            if req.scope == "files":
+                if query_lower in fname.lower():
+                    results.append({"file": rel_path, "line": 0, "match": fname, "context": ""})
+                continue
+
+            try:
+                content = fpath.read_text(encoding="utf-8", errors="replace")
+                for line_num, line in enumerate(content.splitlines(), 1):
+                    if query_lower in line.lower():
+                        results.append({
+                            "file": rel_path,
+                            "line": line_num,
+                            "match": line.strip()[:200],
+                            "context": fname,
+                        })
+                        if len(results) >= req.max_results:
+                            break
+            except Exception:
+                continue
+
+    return {"results": results, "total": len(results), "query": req.query, "scope": req.scope}
+
+
+# ─── Agent Status ─────────────────────────────────────────────────
+
+_AGENT_STATUS = {
+    "status": "idle",
+    "phase": None,
+    "runtime_ms": 0,
+    "last_task": None,
+    "started_at": None,
+}
+
+
+@app.get("/api/agent/status")
+def get_agent_status():
+    """Return current agent execution status."""
+    return _AGENT_STATUS
+
+
+@app.post("/api/agent/stop")
+def stop_agent():
+    """Request the running agent to stop."""
+    global _GLOBAL_AGENT
+    if "_GLOBAL_AGENT" in globals() and _GLOBAL_AGENT is not None:
+        _GLOBAL_AGENT = None
+        _AGENT_STATUS["status"] = "stopped"
+        _AGENT_STATUS["phase"] = None
+        return {"status": "stopped", "message": "Agent stopped"}
+    return {"status": "idle", "message": "No agent running"}
+
+
+# ─── API Keys Management ─────────────────────────────────────────
+
+class APIKeyRequest(BaseModel):
+    provider: str  # "gemini" | "openai" | "anthropic" | "openrouter"
+    api_key: str
+
+
+@app.get("/api/keys")
+def list_api_keys():
+    """Return which API key providers are configured (without exposing keys)."""
+    providers = {
+        "gemini": bool(os.environ.get("GEMINI_API_KEY")),
+        "openai": bool(os.environ.get("OPENAI_API_KEY")),
+        "anthropic": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "openrouter": bool(os.environ.get("OPENROUTER_API_KEY")),
+    }
+    return {"providers": providers}
+
+
+@app.post("/api/keys")
+def set_api_key(req: APIKeyRequest):
+    """Set an API key for a provider (session-only, stored in env)."""
+    env_map = {
+        "gemini": "GEMINI_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+    }
+    env_var = env_map.get(req.provider)
+    if not env_var:
+        return {"status": "error", "message": f"Unknown provider: {req.provider}"}
+    os.environ[env_var] = req.api_key
+    return {"status": "success", "provider": req.provider, "message": f"{req.provider} API key configured"}
+
+
 @app.websocket("/ws/agent")
 async def agent_socket(websocket: WebSocket) -> None:
     await websocket.accept()
@@ -782,6 +1031,12 @@ async def agent_socket(websocket: WebSocket) -> None:
 
         print(f"[WS] Using workspace: {workspace_path}")
 
+        _AGENT_STATUS["status"] = "running"
+        _AGENT_STATUS["phase"] = "observe"
+        _AGENT_STATUS["last_task"] = task
+        _AGENT_STATUS["started_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+        _AGENT_STATUS["runtime_ms"] = 0
+
         try:
             global _GLOBAL_AGENT
             from backend.config import load_config
@@ -791,6 +1046,12 @@ async def agent_socket(websocket: WebSocket) -> None:
             else:
                 _GLOBAL_AGENT.config = config
             async for event in _GLOBAL_AGENT.run(task, workspace_path, plan_mode=plan_mode):
+                if isinstance(event, dict):
+                    if event.get("type") == "phase_change":
+                        _AGENT_STATUS["phase"] = event.get("phase")
+                    elif event.get("type") == "status" and event.get("status") == "done":
+                        _AGENT_STATUS["status"] = "idle"
+                        _AGENT_STATUS["phase"] = None
                 await websocket.send_json(event)
         except Exception as exc:
             print(f"[WS] Agent error: {exc}")
