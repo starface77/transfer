@@ -83,6 +83,16 @@ function getKindIcon(kind: AgentActivityKind) {
   return Bot
 }
 
+function getKindColor(kind: AgentActivityKind): { bg: string; border: string; text: string; icon: string } {
+  // All steps use neutral gray colors, shimmer effect will be added separately for running steps
+  return {
+    bg: "bg-stone-50",
+    border: "border-stone-200/60",
+    text: "text-stone-700",
+    icon: "text-stone-500"
+  }
+}
+
 // Extract file paths into beautiful badges
 function renderDescriptionWithFiles(text: string, onOpenDiff?: (filename: string) => void) {
   const regex = /([a-zA-Z]:\\[^\s\]'"]+)|((?:[\w.-]+\/)+[\w.-]+)|'([\w.-]+\.\w+)'|"([\w.-]+\.\w+)"/g;
@@ -130,6 +140,7 @@ function AgentTimelineRow({ step, index, onOpenDiff }: { step: ToolStep; index: 
   const isRunning = step.status === "running"
   const kind = getActivityKind(step)
   const KindIcon = getKindIcon(kind)
+  const colors = getKindColor(kind)
 
   const isFilePatch = step.id.startsWith("patch-") || step.name.toLowerCase().includes("patch") || step.name === "Prepared code changes"
   const isFileKind = kind === "file"
@@ -137,29 +148,46 @@ function AgentTimelineRow({ step, index, onOpenDiff }: { step: ToolStep; index: 
 
   // Filter out redundant descriptions
   const shouldShowDescription = step.description && !["Finished.", "Done", "Working"].includes(step.description.trim())
-  
+
   // Try to detect terminal commands to style them like a console
   const isTerminalCommand = shouldShowDescription && (step.description!.includes("$ ") || step.description!.includes("npm ") || step.description!.includes("git ") || step.description!.includes("python "))
 
   return (
-    <div 
-      className={cn("relative flex items-start gap-3 py-1.5 group", isFilePatch && onOpenDiff && "cursor-pointer hover:bg-stone-50/80 rounded-lg transition-colors px-2 -mx-2")}
+    <div
+      className={cn(
+        "relative flex items-start gap-3 py-1.5 group transition-all duration-200",
+        isFilePatch && onOpenDiff && "cursor-pointer hover:bg-stone-50/50 rounded-lg px-2 -mx-2"
+      )}
       onClick={() => { if (isFilePatch && onOpenDiff) onOpenDiff("agent-patch.diff") }}
     >
-      <div className={cn("relative -ml-[7px] mt-[3px] flex h-3.5 w-3.5 shrink-0 items-center justify-center bg-white", isFilePatch && onOpenDiff && "group-hover:bg-stone-50/80 transition-colors")}>
-        {isRunning ? getStepIcon(step.status) : step.status === "error" ? getStepIcon(step.status) : <KindIcon strokeWidth={1.5} className="h-3.5 w-3.5 text-stone-400" />}
+      <div className="relative -ml-[7px] mt-[3px] flex h-3.5 w-3.5 shrink-0 items-center justify-center bg-white">
+        {isRunning ? (
+          <KindIcon strokeWidth={1.8} className={cn("h-3.5 w-3.5 animate-pulse transition-colors", colors.icon)} />
+        ) : step.status === "error" ? (
+          getStepIcon(step.status)
+        ) : (
+          <KindIcon strokeWidth={1.5} className="h-3.5 w-3.5 text-stone-400" />
+        )}
       </div>
       <div className="min-w-0 flex-1 text-[13px] font-normal leading-5 text-stone-500">
         {step.id?.startsWith("tool-call-") ? (
           <>
-            <span className={cn("font-medium", step.status === "error" ? "text-red-600" : "text-stone-700")}>
+            <span className={cn("font-medium transition-colors", step.status === "error" ? "text-red-600" : isRunning ? colors.text : "text-stone-700")}>
               {step.name}
             </span>
           </>
         ) : (
           <>
-            <span className="text-stone-400">{getKindLabel(kind)}</span>
-            <span className={cn("ml-2 font-medium", step.status === "error" ? "text-red-600" : "text-stone-700")}>
+            <span className={cn(
+              "relative transition-colors",
+              isRunning ? "text-stone-700 font-medium" : "text-stone-400"
+            )}>
+              {isRunning && (
+                <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/60 to-transparent opacity-70 animate-shimmer" />
+              )}
+              {getKindLabel(kind)}
+            </span>
+            <span className={cn("ml-2 font-medium transition-colors", step.status === "error" ? "text-red-600" : isRunning ? colors.text : "text-stone-700")}>
               {(isFilePatch || isFileKind) && !step.name.includes(" ") ? (
                  <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5 bg-stone-100 text-stone-700 border border-stone-200/60 rounded-md text-[11.5px] font-mono shadow-[0_1px_2px_rgba(0,0,0,0.02)] translate-y-[-1px] transition-colors">
                    <FileCode size={12} className="text-stone-400" />
@@ -364,12 +392,20 @@ export function MessageBubble({ message, isStreaming = false, onOpenDiff }: Mess
           <div className="space-y-2">
             <button
               onClick={() => setExpandedSteps(!expandedSteps)}
-              className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] font-normal leading-5 text-stone-400 transition-colors hover:text-stone-600"
+              className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] font-normal leading-5 transition-colors hover:text-stone-600 group"
             >
-              {expandedSteps ? <ChevronDown size={13} strokeWidth={1.5} /> : <ChevronRight size={13} strokeWidth={1.5} />}
-              <span>{isStreaming || isWorking ? "Working" : "Worked"} for {elapsed}</span>
-              {steps.length > 0 && <span>· {steps.length} {steps.length === 1 ? "action" : "actions"}</span>}
-              {activitySummary.length > 0 && <span>· {activitySummary.slice(0, 4).join(", ")}</span>}
+              {expandedSteps ? <ChevronDown size={13} strokeWidth={1.5} className="text-stone-400" /> : <ChevronRight size={13} strokeWidth={1.5} className="text-stone-400" />}
+              <span className={cn(
+                "relative transition-all duration-300",
+                (isStreaming || isWorking) ? "text-stone-700 font-medium" : "text-stone-400"
+              )}>
+                {(isStreaming || isWorking) && (
+                  <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-70 animate-shimmer" />
+                )}
+                {isStreaming || isWorking ? "Working" : "Worked"} for {elapsed}
+              </span>
+              {steps.length > 0 && <span className="text-stone-400">· {steps.length} {steps.length === 1 ? "action" : "actions"}</span>}
+              {activitySummary.length > 0 && <span className="text-stone-400">· {activitySummary.slice(0, 4).join(", ")}</span>}
             </button>
 
             {expandedSteps && (
@@ -472,7 +508,7 @@ export function MessageBubble({ message, isStreaming = false, onOpenDiff }: Mess
 
           {/* Diff Card */}
           {visibleContent && visibleContent.includes("```diff") && onOpenDiff && (
-            <div className="flex items-center justify-between p-4 bg-stone-50 border border-stone-200/60 rounded-2xl max-w-[500px] shadow-[0_1px_4px_rgba(0,0,0,0.01)] animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="flex items-center justify-between p-4 bg-stone-50 border border-stone-200/60 rounded-2xl max-w-[500px] shadow-[0_2px_12px_rgba(0,0,0,0.04)] animate-in fade-in slide-in-from-bottom-2 duration-500 transition-all hover:-translate-y-[1px] hover:shadow-[0_4px_20px_rgba(0,0,0,0.06)]">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-white border border-stone-200/60 flex items-center justify-center shadow-[0_1px_3px_rgba(0,0,0,0.01)]">
                   <FileCode size={16} strokeWidth={1.5} className="text-stone-500" />
@@ -484,7 +520,8 @@ export function MessageBubble({ message, isStreaming = false, onOpenDiff }: Mess
               </div>
               <button
                 onClick={() => onOpenDiff("agent-patch.diff")}
-                className="px-3.5 py-1.5 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-[12.5px] font-normal transition-colors shadow-sm shrink-0 ml-4"
+                className="px-3.5 py-1.5 text-white rounded-xl text-[12.5px] font-normal transition-all duration-200 shadow-[0_2px_12px_rgba(0,0,0,0.15)] hover:-translate-y-[1px] hover:shadow-[0_4px_20px_rgba(0,0,0,0.2)] shrink-0 ml-4"
+                style={{ backgroundImage: 'linear-gradient(180deg, #2c2c2c 0%, #111111 100%)' }}
               >
                 View Diff
               </button>
@@ -512,7 +549,7 @@ export function MessageBubble({ message, isStreaming = false, onOpenDiff }: Mess
   return (
     <div className="flex w-full justify-end max-w-3xl mx-auto py-4 user-message-enter">
       <div className="flex flex-col items-end gap-1.5 max-w-[85%] md:max-w-[75%]">
-        <div className="rounded-[20px] rounded-br-[6px] bg-[#f4f4f5] text-stone-800 font-normal px-4 py-3">
+        <div className="rounded-[20px] rounded-br-[6px] bg-[#f4f4f5] text-stone-800 font-normal px-4 py-3 transition-all duration-200 hover:shadow-[0_2px_12px_rgba(0,0,0,0.04)] hover:-translate-y-[1px]">
           <div className="flex flex-col gap-2">
             {message.imageData && (
               <div className="w-32 h-32 rounded-xl overflow-hidden border border-stone-100 shadow-sm image-bounce">

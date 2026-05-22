@@ -5,7 +5,7 @@ import { LeftSidebar } from "./left-sidebar"
 import { RightSidebar } from "./right-sidebar"
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000"
-import { Search, FileText, Plus, Folder, Clock, MoreHorizontal, ArrowLeft, X } from "lucide-react"
+import { Search, FileText, Plus, Folder, ArrowLeft, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export function WikiShell() {
@@ -30,45 +30,64 @@ export function WikiShell() {
   const runBuildCommand = useCallback(() => {
     if (isRunningTask) return
     setIsRunningTask(true)
-    setTerminalLines(prev => [...prev, "", "$ npm run build", "info  - Creating production build...", "info  - Compiled successfully"])
-    setTimeout(() => setIsRunningTask(false), 1200)
+    setTerminalLines(prev => [...prev, "", "$ npm run build"])
+    fetch(`${BACKEND_URL}/api/terminal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: "npm run build" }),
+    })
+      .then((res) => res.json())
+      .then((data) => setTerminalLines((prev) => [...prev, ...(Array.isArray(data.output) ? data.output : [JSON.stringify(data)])]))
+      .catch((err) => setTerminalLines((prev) => [...prev, `error: ${err.message}`]))
+      .finally(() => setIsRunningTask(false))
   }, [isRunningTask])
 
   const runTestCommand = useCallback(() => {
     if (isRunningTask) return
     setIsRunningTask(true)
-    setTerminalLines(prev => [...prev, "", "$ npm run test", " PASS  components/chat/wiki-shell.test.tsx", "Test Suites: 1 passed, 1 total"])
-    setTimeout(() => setIsRunningTask(false), 1200)
+    setTerminalLines(prev => [...prev, "", "$ npm test"])
+    fetch(`${BACKEND_URL}/api/terminal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: "npm test" }),
+    })
+      .then((res) => res.json())
+      .then((data) => setTerminalLines((prev) => [...prev, ...(Array.isArray(data.output) ? data.output : [JSON.stringify(data)])]))
+      .catch((err) => setTerminalLines((prev) => [...prev, `error: ${err.message}`]))
+      .finally(() => setIsRunningTask(false))
   }, [isRunningTask])
 
   const clearTerminal = useCallback(() => {
     setTerminalLines([])
   }, [])
 
-  const handleCommandSubmit = useCallback((e: React.FormEvent) => {
+  const handleCommandSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     if (!currentInput) return
-    const cmd = currentInput.trim().toLowerCase()
+    const cmd = currentInput.trim()
     setTerminalLines(prev => [...prev, `$ ${currentInput}`])
     setCurrentInput("")
-    
-    if (cmd === "clear") {
+    if (cmd.toLowerCase() === "clear") {
       setTerminalLines([])
-    } else if (cmd === "help") {
-      setTerminalLines(prev => [
-        ...prev,
-        "Available routines:",
-        "  help           - Show this dialog",
-        "  clear          - Clear terminal output",
-        "  npm run build  - Build production binary",
-        "  npm run test   - Run workspace unit tests",
-      ])
-    } else {
-      setTerminalLines(prev => [...prev, `bash: command not found: ${cmd}`])
+      return
+    }
+    setIsRunningTask(true)
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/terminal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: cmd }),
+      })
+      const data = await response.json()
+      setTerminalLines((prev) => [...prev, ...(Array.isArray(data.output) ? data.output : [JSON.stringify(data)])])
+    } catch (err: any) {
+      setTerminalLines((prev) => [...prev, `error: ${err.message}`])
+    } finally {
+      setIsRunningTask(false)
     }
   }, [currentInput])
 
-  // Drag and drop mocks
+  // Terminal dock drag state
   const handleDragStart = useCallback(() => setIsDraggingTerminal(true), [])
   const handleDragEnd = useCallback(() => setIsDraggingTerminal(false), [])
 
@@ -86,6 +105,7 @@ export function WikiShell() {
   const [documents, setDocuments] = useState<any[]>([])
   const [selectedDoc, setSelectedDoc] = useState<any | null>(null)
   const [docContent, setDocContent] = useState<string>("")
+  const [folders, setFolders] = useState<any[]>([])
 
   // New document creation state
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -94,6 +114,23 @@ export function WikiShell() {
   const [newDocContent, setNewDocContent] = useState("")
   const [isSavingDoc, setIsSavingDoc] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const [folderFilter, setFolderFilter] = useState<string | null>(null)
+
+  const fetchFolders = useCallback(async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/docs/folders`)
+      if (res.ok) {
+        const data = await res.json()
+        setFolders(data.folders || [])
+      }
+    } catch (err) {
+      console.error("Failed to load doc folders:", err)
+      setFolders([
+        { name: "Theory & Manifesto", path: "", count: 0 },
+        { name: "Workspace Root", path: "", count: 0 }
+      ])
+    }
+  }, [])
 
   const fetchDocs = useCallback(async () => {
     try {
@@ -109,8 +146,9 @@ export function WikiShell() {
   }, [])
 
   useEffect(() => {
+    fetchFolders()
     fetchDocs()
-  }, [fetchDocs])
+  }, [fetchFolders, fetchDocs])
 
   // Fetch document content upon selection
   useEffect(() => {
@@ -181,18 +219,18 @@ export function WikiShell() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Folders */}
-              {["Theory & Manifesto", "Workspace Root"].map((folder) => (
-                <div key={folder} className="p-4 rounded-2xl bg-white border border-stone-200/40 shadow-[0_1px_8px_rgba(0,0,0,0.02)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.04)] transition-all cursor-pointer group">
+              {folders.map((folder) => (
+                <button key={folder.name} onClick={() => setFolderFilter(folderFilter === folder.name ? null : folder.name)} className={cn("p-4 rounded-2xl bg-white border border-stone-200/40 shadow-[0_1px_8px_rgba(0,0,0,0.02)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.04)] transition-all text-left group", folderFilter === folder.name && "bg-stone-50 border-stone-300/70")}>
                   <div className="flex items-center gap-3 mb-2">
                     <div className="w-8 h-8 rounded-full bg-stone-50 flex items-center justify-center group-hover:bg-stone-100 transition-colors">
                       <Folder className="w-4 h-4 text-stone-400" strokeWidth={1.5} />
                     </div>
-                    <span className="font-medium text-[14px] text-stone-700">{folder}</span>
+                    <span className="font-medium text-[14px] text-stone-700">{folder.name}</span>
                   </div>
                   <div className="text-[12px] text-stone-400 font-normal ml-11">
-                    {documents.filter(doc => doc.folder === folder).length} documents
+                    {folder.count} documents
                   </div>
-                </div>
+                </button>
               ))}
             </div>
 
@@ -200,7 +238,7 @@ export function WikiShell() {
               <h2 className="text-[12.5px] font-semibold text-stone-500 tracking-tight mb-3">Active Documents</h2>
               <div className="bg-white border border-stone-200/40 rounded-2xl shadow-[0_1px_8px_rgba(0,0,0,0.02)] overflow-hidden">
                 {documents
-                .filter(doc => !searchQuery || doc.title.toLowerCase().includes(searchQuery.toLowerCase()))
+                .filter(doc => (!searchQuery || doc.title.toLowerCase().includes(searchQuery.toLowerCase())) && (!folderFilter || doc.folder === folderFilter))
                 .map((doc, i) => (
                   <div 
                     key={doc.id} 
@@ -217,9 +255,6 @@ export function WikiShell() {
                     </div>
                     <div className="flex items-center gap-6">
                       <span className="text-[11px] text-stone-400 font-normal bg-stone-100 px-2 py-0.5 rounded-full">{doc.folder}</span>
-                      <button className="text-stone-300 hover:text-stone-600 transition-colors">
-                        <MoreHorizontal className="w-4 h-4" />
-                      </button>
                     </div>
                   </div>
                 ))}
@@ -309,8 +344,11 @@ export function WikiShell() {
                   onChange={(e) => setNewDocFolder(e.target.value)}
                   className="w-full px-3 py-2 border border-stone-200 rounded-xl text-[13px] focus:outline-none focus:border-stone-400 bg-white"
                 >
-                  <option value="Theory & Manifesto">Theory & Manifesto (modules/docs/)</option>
-                  <option value="Workspace Root">Workspace Root (root/)</option>
+                  {folders.map((folder) => (
+                    <option key={folder.name} value={folder.name}>
+                      {folder.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 

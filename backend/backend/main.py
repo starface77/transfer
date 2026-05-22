@@ -567,6 +567,13 @@ def accept_patch(request: PatchDecisionRequest) -> dict[str, object]:
     return PATCH_DECISION
 
 
+@app.post("/api/patch/reject")
+def reject_patch(request: PatchDecisionRequest) -> dict[str, object]:
+    PATCH_DECISION["status"] = "rejected"
+    PATCH_DECISION["message"] = request.note or f"Requested changes for {request.workspace_path}."
+    return PATCH_DECISION
+
+
 @app.get("/api/git/changes")
 def get_git_changes():
     workspace = SETTINGS.workspace_path
@@ -624,14 +631,17 @@ def get_git_changes():
                 "modified": modified.strip() or "// Modified file content"
             })
             
+        if not files:
+            return []
+
         return [
             {
-                "id": "PR-REAL",
-                "title": "Sync local modifications",
-                "repo": "starface77/Field",
-                "status": "pending",
+                "id": "LOCAL-CHANGES",
+                "title": "Review local workspace modifications",
+                "repo": Path(workspace).name,
+                "status": PATCH_DECISION.get("status", "pending"),
                 "time": "Just now",
-                "description": "Real-time modifications detected in the active workspace. Ready to deploy or synchronize.",
+                "description": "Real workspace modifications detected. Review the diff, then accept the patch or request changes.",
                 "filesChanged": files
             }
         ]
@@ -729,7 +739,7 @@ def get_workspace_tree():
                     continue
                 if item.name in ("node_modules", "__pycache__", "venv", ".venv", "dist", "build"):
                     continue
-                
+
                 node = {
                     "id": str(item),
                     "name": item.name,
@@ -742,7 +752,7 @@ def get_workspace_tree():
         except Exception:
             pass
         return tree
-        
+
     workspace = Path(SETTINGS.workspace_path)
     return {
         "name": workspace.name,
@@ -750,6 +760,160 @@ def get_workspace_tree():
         "type": "folder",
         "children": build_tree(workspace)
     }
+
+
+@app.get("/api/docs/folders")
+def get_doc_folders():
+    """Get all available documentation folders dynamically."""
+    workspace = Path(SETTINGS.workspace_path)
+    folders = []
+
+    # Scan modules/docs
+    docs_dir = workspace / "modules" / "docs"
+    if docs_dir.exists():
+        folders.append({
+            "name": "Theory & Manifesto",
+            "path": str(docs_dir),
+            "count": len(list(docs_dir.glob("*.md")))
+        })
+
+    # Scan root directory
+    root_md_count = len(list(workspace.glob("*.md")))
+    if root_md_count > 0:
+        folders.append({
+            "name": "Workspace Root",
+            "path": str(workspace),
+            "count": root_md_count
+        })
+
+    # Scan for other doc directories
+    for subdir in workspace.iterdir():
+        if subdir.is_dir() and subdir.name not in ("node_modules", ".git", "__pycache__", "venv", ".venv", "dist", "build", "modules"):
+            md_files = list(subdir.glob("*.md"))
+            if len(md_files) > 0:
+                folders.append({
+                    "name": subdir.name.replace("_", " ").title(),
+                    "path": str(subdir),
+                    "count": len(md_files)
+                })
+
+    return {"folders": folders}
+
+
+@app.get("/api/git/branches")
+def get_git_branches():
+    """Get all git branches in the workspace."""
+    workspace = SETTINGS.workspace_path
+    try:
+        # Get current branch
+        current_res = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        current_branch = current_res.stdout.strip()
+
+        # Get all branches
+        branches_res = subprocess.run(
+            ["git", "branch", "-a"],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        branches = []
+        for line in branches_res.stdout.strip().split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+
+            is_current = line.startswith("*")
+            branch_name = line.lstrip("* ").strip()
+
+            # Skip remote HEAD references
+            if "HEAD ->" in branch_name:
+                continue
+
+            # Clean up remote branch names
+            if branch_name.startswith("remotes/"):
+                branch_name = branch_name.replace("remotes/origin/", "")
+
+            branches.append({
+                "name": branch_name,
+                "current": is_current or branch_name == current_branch,
+                "remote": "remotes/" in line
+            })
+
+        return {
+            "current": current_branch,
+            "branches": branches
+        }
+    except Exception as e:
+        return {
+            "current": "main",
+            "branches": [{"name": "main", "current": True, "remote": False}],
+            "error": str(e)
+        }
+
+
+@app.get("/api/deployment/status")
+def get_deployment_status():
+    """Get deployment and build status information."""
+    workspace = Path(SETTINGS.workspace_path)
+
+    status = {
+        "frontend": {"status": "unknown", "message": "Not checked"},
+        "backend": {"status": "unknown", "message": "Not checked"},
+        "tests": {"status": "unknown", "message": "Not checked"},
+        "build": {"status": "unknown", "message": "Not checked"}
+    }
+
+    # Check if package.json exists (frontend)
+    package_json = workspace / "frontend" / "package.json"
+    if package_json.exists():
+        status["frontend"] = {
+            "status": "ready",
+            "message": "Next.js project detected",
+            "path": "frontend/"
+        }
+
+    # Check if backend exists
+    backend_main = workspace / "backend" / "backend" / "main.py"
+    if backend_main.exists():
+        status["backend"] = {
+            "status": "ready",
+            "message": "FastAPI backend detected",
+            "path": "backend/backend/main.py"
+        }
+
+    # Check for test files
+    test_files = list(workspace.glob("**/test_*.py")) + list(workspace.glob("**/*_test.py"))
+    if test_files:
+        status["tests"] = {
+            "status": "ready",
+            "message": f"{len(test_files)} test files found",
+            "count": len(test_files)
+        }
+
+    # Check for build artifacts
+    build_dirs = [
+        workspace / "frontend" / ".next",
+        workspace / "dist",
+        workspace / "build"
+    ]
+    for build_dir in build_dirs:
+        if build_dir.exists():
+            status["build"] = {
+                "status": "ready",
+                "message": f"Build artifacts found in {build_dir.name}",
+                "path": str(build_dir.relative_to(workspace))
+            }
+            break
+
+    return status
 
 
 # ─── Tools Registry ───────────────────────────────────────────────

@@ -106,10 +106,28 @@ export function MessageList({ messages, isStreaming, error, onRetry, isLoaded, o
     >
       {/* Empty state */}
       {messages.length === 0 && !error && !isStreaming && (
-        <div className="flex flex-col items-center justify-center h-full text-center text-stone-400">
-          <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-stone-200 bg-white shadow-[0_1px_10px_rgba(0,0,0,0.035)]">
-            <Bot size={22} strokeWidth={1.5} className="text-stone-600" />
+        <div className="flex flex-col items-center justify-center h-full text-center text-stone-400 relative">
+          {/* Subtle floating particles */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-20">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div
+                key={i}
+                className="absolute w-2 h-2 rounded-full animate-float-slow"
+                style={{
+                  left: `${20 + Math.random() * 60}%`,
+                  top: `${20 + Math.random() * 60}%`,
+                  background: `linear-gradient(to bottom, #F7B2FB 50%, #786EF1 80%, #5588FB 100%)`,
+                  animationDelay: `${i * 0.5}s`,
+                  animationDuration: `${4 + i * 0.5}s`
+                }}
+              />
+            ))}
           </div>
+
+          <div className="relative mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-stone-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.04)] transition-all duration-300 hover:-translate-y-[2px] hover:shadow-[0_4px_20px_rgba(0,0,0,0.08)]">
+            <Bot size={22} strokeWidth={1.5} className="text-stone-600 relative z-10" />
+          </div>
+
           <p className="text-[18px] font-semibold text-stone-800 tracking-tight">
             Professional coding agent
           </p>

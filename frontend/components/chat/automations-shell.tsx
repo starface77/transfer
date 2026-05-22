@@ -50,6 +50,7 @@ export function AutomationsShell() {
   const [generatedDiff, setGeneratedDiff] = useState<string>("")
   const [taskPrompt, setTaskPrompt] = useState("Run full test suite via pytest and stabilize any failing tests")
   const [targetWorkspace, setTargetWorkspace] = useState("")
+  const [workspacePath, setWorkspacePath] = useState("")
   
   const socketRef = useRef<WebSocket | null>(null)
   const logsEndRef = useRef<HTMLDivElement | null>(null)
@@ -59,18 +60,49 @@ export function AutomationsShell() {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [agentLogs])
 
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/settings`)
+        if (!response.ok) return
+        const data = await response.json()
+        if (data.workspace_path) {
+          setWorkspacePath(data.workspace_path)
+          setTargetWorkspace((current) => current || data.workspace_path)
+        }
+      } catch {}
+    }
+    loadSettings()
+  }, [])
+
   const runBuildCommand = useCallback(() => {
     if (isRunningTask) return
     setIsRunningTask(true)
-    setTerminalLines(prev => [...prev, "", "$ npm run build", "info  - Creating production build...", "info  - Compiled successfully"])
-    setTimeout(() => setIsRunningTask(false), 1200)
+    setTerminalLines(prev => [...prev, "", "$ npm run build"])
+    fetch(`${BACKEND_URL}/api/terminal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: "npm run build" }),
+    })
+      .then((res) => res.json())
+      .then((data) => setTerminalLines((prev) => [...prev, ...(Array.isArray(data.output) ? data.output : [JSON.stringify(data)])]))
+      .catch((err) => setTerminalLines((prev) => [...prev, `error: ${err.message}`]))
+      .finally(() => setIsRunningTask(false))
   }, [isRunningTask])
 
   const runTestCommand = useCallback(() => {
     if (isRunningTask) return
     setIsRunningTask(true)
-    setTerminalLines(prev => [...prev, "", "$ npm run test", " PASS  components/chat/automations-shell.test.tsx", "Test Suites: 1 passed, 1 total"])
-    setTimeout(() => setIsRunningTask(false), 1200)
+    setTerminalLines(prev => [...prev, "", "$ npm test"])
+    fetch(`${BACKEND_URL}/api/terminal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: "npm test" }),
+    })
+      .then((res) => res.json())
+      .then((data) => setTerminalLines((prev) => [...prev, ...(Array.isArray(data.output) ? data.output : [JSON.stringify(data)])]))
+      .catch((err) => setTerminalLines((prev) => [...prev, `error: ${err.message}`]))
+      .finally(() => setIsRunningTask(false))
   }, [isRunningTask])
 
   const clearTerminal = useCallback(() => {
@@ -128,7 +160,8 @@ export function AutomationsShell() {
     ws.onopen = () => {
       ws.send(JSON.stringify({
         task: activePrompt,
-        workspace_path: targetWorkspace
+          workspace_path: targetWorkspace,
+          plan_mode: "autonomous",
       }))
       setAgentLogs(prev => [...prev, "[WS] Connected to sharrowkin agent broker.", "[WS] Dispatched task payload..."])
     }
@@ -142,22 +175,29 @@ export function AutomationsShell() {
           setAgentLogs(prev => [...prev, ``, `➔ Phase Transition: ${data.phase.toUpperCase()}`])
         } else if (data.type === "log") {
           setAgentLogs(prev => [...prev, `[${data.level?.toUpperCase() || "INFO"}] ${data.message}`])
-        } else if (data.type === "patch_proposed") {
+        } else if (data.type === "diff" || data.type === "patch_proposed") {
           if (data.diff) {
             setGeneratedDiff(data.diff)
           }
           setAgentLogs(prev => [...prev, `✔ Proposed code patch generated successfully.`])
+        } else if (data.type === "content") {
+          setAgentLogs(prev => [...prev, data.content])
         } else if (data.type === "test_result") {
           setAgentLogs(prev => [
             ...prev,
             `[TESTS] Run complete. Exit Code: ${data.exit_code}`,
             `[PYTEST] Output:\n${data.output}`
           ])
-        } else if (data.type === "success") {
+        } else if (data.type === "status" && data.status === "done") {
           setIsRunningTask(false)
           setCurrentPhase("commit")
-          setAgentLogs(prev => [...prev, ``, `✔ TASK SUCCESS: All invariants stabilized. Patch successfully committed to DNA.`])
-          triggerToast("Agent run stabilized and completed!")
+          setAgentLogs(prev => [...prev, ``, `✔ Autonomous run complete.`])
+          triggerToast("Agent run completed.")
+        } else if (data.type === "status" && (data.status === "error" || data.status === "needs_key")) {
+          setIsRunningTask(false)
+          setCurrentPhase("failed")
+          setAgentLogs(prev => [...prev, ``, `✖ AGENT FAILURE: ${data.status}`])
+          triggerToast("Agent run needs attention.")
         } else if (data.type === "error") {
           setIsRunningTask(false)
           setCurrentPhase("failed")
@@ -190,7 +230,7 @@ export function AutomationsShell() {
     setAgentLogs(prev => [...prev, "[WS] Forcefully aborted agent routine."])
   }, [])
 
-  // Drag and drop mocks
+  // Terminal dock drag state
   const handleDragStart = useCallback(() => setIsDraggingTerminal(true), [])
   const handleDragEnd = useCallback(() => setIsDraggingTerminal(false), [])
 
@@ -244,6 +284,8 @@ export function AutomationsShell() {
     }
   ]
 
+  const repoLabel = workspacePath ? workspacePath.split(/[\\/]/).filter(Boolean).pop() || workspacePath : "No workspace selected"
+
   return (
     <div className="h-dvh bg-background flex overflow-hidden">
       <LeftSidebar isOpen={leftSidebarOpen} onToggle={() => setLeftSidebarOpen(!leftSidebarOpen)} />
@@ -291,7 +333,7 @@ export function AutomationsShell() {
                     </span>
                   </div>
                   <p className="text-[13px] text-stone-400 font-light max-w-xl leading-relaxed">
-                    Hello! I am connected to your <span className="font-mono text-[12px] bg-stone-50 px-1.5 py-0.5 rounded text-stone-700">Field</span> repository. 
+                    I am connected to <span className="font-mono text-[12px] bg-stone-50 px-1.5 py-0.5 rounded text-stone-700">{repoLabel}</span>. 
                     I can read the repository, plan changes, edit code, run tests, and report the result clearly.
                   </p>
                 </div>
@@ -301,7 +343,7 @@ export function AutomationsShell() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-6 border-t border-stone-100">
                 <div className="space-y-0.5">
                   <span className="text-[10px] text-stone-400 uppercase tracking-widest block">Active Repo</span>
-                  <span className="text-[12.5px] font-mono text-stone-800 font-normal">starface77/Field</span>
+                  <span className="text-[12.5px] font-mono text-stone-800 font-normal truncate block">{repoLabel}</span>
                 </div>
                 <div className="space-y-0.5">
                   <span className="text-[10px] text-stone-400 uppercase tracking-widest block">Intelligence</span>
@@ -353,7 +395,7 @@ export function AutomationsShell() {
             <div className="border border-stone-200/60 bg-white rounded-2xl p-6 shadow-[0_1px_8px_rgba(0,0,0,0.01)] space-y-4">
               <div className="flex items-center justify-between border-b border-stone-100 pb-3">
                 <span className="text-[11px] font-medium text-stone-400 uppercase tracking-widest">Or enter a custom instruction</span>
-                <span className="text-[11px] font-mono text-stone-400">workspace: c:\Users\danik\Documents\Field</span>
+                <span className="text-[11px] font-mono text-stone-400 truncate">workspace: {targetWorkspace || workspacePath || "not configured"}</span>
               </div>
 
               <div className="space-y-4">

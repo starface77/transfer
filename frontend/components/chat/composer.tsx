@@ -38,8 +38,8 @@ interface ComposerProps {
   selectedModel: AIModel
   onModelChange: (model: AIModel) => void
   bottomOffset?: number
-  planMode: "autonomous" | "interactive" | "analyze"
-  onPlanModeChange: (mode: "autonomous" | "interactive" | "analyze") => void
+  planMode: PlanMode
+  onPlanModeChange: (mode: PlanMode) => void
 }
 
 const PLAN_MODES = [
@@ -62,6 +62,16 @@ const PLAN_MODES = [
     icon: Search,
   },
 ]
+
+type PlanMode = "autonomous" | "interactive" | "analyze"
+
+const QUICK_ACTIONS: Array<{ label: string; prompt: string; mode?: PlanMode }> = [
+  { label: "Autonomous fix", prompt: "Найди и исправь проблему автономно: изучи код, внеси минимальный патч и запусти проверку." },
+  { label: "Improve UI", prompt: "Улучши UI: найди слабые места интерфейса, добавь полезную фичу и проверь сборку." },
+  { label: "Explain project", prompt: "Изучи проект и кратко объясни архитектуру, ключевые модули и что улучшить дальше.", mode: "analyze" as const },
+]
+
+const AUTONOMY_SIGNALS = ["infer defaults", "edit directly", "run checks"]
 
 export function Composer({
   onSend,
@@ -239,6 +249,11 @@ export function Composer({
   const currentModel = AI_MODELS.find((m) => m.id === selectedModel) || AI_MODELS[0]
   const selectedModeObj = PLAN_MODES.find((m) => m.id === planMode) || PLAN_MODES[0]
   const SelectedIcon = selectedModeObj.icon
+  const modePlaceholder = planMode === "autonomous"
+    ? "Describe the goal — the agent will decide, edit, and verify..."
+    : planMode === "analyze"
+      ? "Ask for architecture, code review, or repository analysis..."
+      : "Ask the agent to build, fix, or analyze..."
 
   return (
     <div
@@ -277,6 +292,37 @@ export function Composer({
             </div>
           )}
 
+          {planMode === "autonomous" && !isStreaming && !disabled && (
+            <div className="px-4 pt-3 pb-0 flex flex-wrap items-center gap-1.5">
+              <span className="text-[12px] font-normal text-stone-400">Autonomy</span>
+              {AUTONOMY_SIGNALS.map((signal) => (
+                <span key={signal} className="rounded-full bg-emerald-50/70 px-2.5 py-1 text-[12px] font-normal text-emerald-700/80 transition-all duration-200 hover:bg-emerald-50 hover:-translate-y-[1px] hover:shadow-[0_2px_8px_rgba(16,185,129,0.15)]">
+                  {signal}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {!value.trim() && !uploadedImage && !isStreaming && !disabled && (
+            <div className="px-4 pt-3 pb-0 flex flex-wrap gap-1.5">
+              {QUICK_ACTIONS.map((action) => (
+                <button
+                  key={action.label}
+                  type="button"
+                  onClick={() => {
+                    playClickSound()
+                    if (action.mode) onPlanModeChange(action.mode)
+                    setValue(action.prompt)
+                    setTimeout(() => handleInput(), 0)
+                  }}
+                  className="rounded-full bg-stone-100/60 px-3.5 py-1.5 text-[12.5px] font-normal text-stone-500 transition-all duration-200 hover:bg-stone-100 hover:text-stone-800 hover:-translate-y-[1px] hover:shadow-[0_2px_8px_rgba(0,0,0,0.06)] active:scale-[0.98]"
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Text Input Area */}
           <div className="flex px-4 pt-3 pb-1">
             <textarea
@@ -287,7 +333,7 @@ export function Composer({
                 handleInput()
               }}
               onKeyDown={handleKeyDown}
-              placeholder={isRecording ? "Listening..." : "Ask the agent to build, fix, or analyze..."}
+              placeholder={isRecording ? "Listening..." : modePlaceholder}
               disabled={isStreaming || disabled}
               rows={1}
               className={cn(
@@ -481,11 +527,16 @@ export function Composer({
                     onClick={handleSend}
                     disabled={(!value.trim() && !uploadedImage) || disabled}
                     className={cn(
-                      "relative h-8 w-8 shrink-0 transition-transform rounded-full flex items-center justify-center bg-stone-900 text-white hover:bg-stone-800 shadow-sm",
+                      "relative h-8 w-8 shrink-0 transition-all duration-200 rounded-full flex items-center justify-center text-white shadow-[0_2px_12px_rgba(0,0,0,0.15)]",
                       (!value.trim() && !uploadedImage) || disabled
-                        ? "opacity-40 cursor-not-allowed grayscale"
-                        : "cursor-pointer hover:scale-105 active:scale-95",
+                        ? "opacity-40 cursor-not-allowed grayscale bg-stone-400"
+                        : "cursor-pointer hover:-translate-y-[1px] hover:shadow-[0_4px_20px_rgba(0,0,0,0.2)] active:scale-95"
                     )}
+                    style={
+                      (!value.trim() && !uploadedImage) || disabled
+                        ? undefined
+                        : { backgroundImage: 'linear-gradient(180deg, #2c2c2c 0%, #111111 100%)' }
+                    }
                     aria-label="Send message"
                   >
                     <ArrowRight className="w-3.5 h-3.5 text-white" strokeWidth={2.5} />

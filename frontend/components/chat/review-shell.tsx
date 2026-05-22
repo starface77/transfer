@@ -43,15 +43,31 @@ export function ReviewShell() {
   const runBuildCommand = useCallback(() => {
     if (isRunningTask) return
     setIsRunningTask(true)
-    setTerminalLines(prev => [...prev, "", "$ npm run build", "info  - Creating production build...", "info  - Compiled successfully"])
-    setTimeout(() => setIsRunningTask(false), 1200)
+    setTerminalLines(prev => [...prev, "", "$ npm run build"])
+    fetch(`${BACKEND_URL}/api/terminal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: "npm run build" }),
+    })
+      .then((res) => res.json())
+      .then((data) => setTerminalLines((prev) => [...prev, ...(Array.isArray(data.output) ? data.output : [JSON.stringify(data)])]))
+      .catch((err) => setTerminalLines((prev) => [...prev, `error: ${err.message}`]))
+      .finally(() => setIsRunningTask(false))
   }, [isRunningTask])
 
   const runTestCommand = useCallback(() => {
     if (isRunningTask) return
     setIsRunningTask(true)
-    setTerminalLines(prev => [...prev, "", "$ npm run test", " PASS  components/chat/review-shell.test.tsx", "Test Suites: 1 passed, 1 total"])
-    setTimeout(() => setIsRunningTask(false), 1200)
+    setTerminalLines(prev => [...prev, "", "$ npm test"])
+    fetch(`${BACKEND_URL}/api/terminal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: "npm test" }),
+    })
+      .then((res) => res.json())
+      .then((data) => setTerminalLines((prev) => [...prev, ...(Array.isArray(data.output) ? data.output : [JSON.stringify(data)])]))
+      .catch((err) => setTerminalLines((prev) => [...prev, `error: ${err.message}`]))
+      .finally(() => setIsRunningTask(false))
   }, [isRunningTask])
 
   const clearTerminal = useCallback(() => {
@@ -92,7 +108,7 @@ export function ReviewShell() {
     }
   }, [currentInput])
 
-  // Drag and drop mocks
+  // Terminal dock drag state
   const handleDragStart = useCallback(() => setIsDraggingTerminal(true), [])
   const handleDragEnd = useCallback(() => setIsDraggingTerminal(false), [])
 
@@ -108,6 +124,8 @@ export function ReviewShell() {
 
   // PR Core Data
   const [pullRequests, setPullRequests] = useState<any[]>([])
+  const [branches, setBranches] = useState<any[]>([])
+  const [currentBranch, setCurrentBranch] = useState<string>("main")
 
   // GitHub integration states
   const [isGitHubConnected, setIsGitHubConnected] = useState(false)
@@ -117,6 +135,19 @@ export function ReviewShell() {
   const [repoUrl, setRepoUrl] = useState("")
   const [connectError, setConnectError] = useState("")
   const [isConnecting, setIsConnecting] = useState(false)
+
+  const fetchBranches = useCallback(async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/git/branches`)
+      if (res.ok) {
+        const data = await res.json()
+        setBranches(data.branches || [])
+        setCurrentBranch(data.current || "main")
+      }
+    } catch (err) {
+      console.error("Failed to load git branches:", err)
+    }
+  }, [])
 
   const fetchChanges = useCallback(async () => {
     try {
@@ -132,8 +163,9 @@ export function ReviewShell() {
   }, [])
 
   useEffect(() => {
+    fetchBranches()
     fetchChanges()
-  }, [fetchChanges])
+  }, [fetchBranches, fetchChanges])
 
   const [selectedPR, setSelectedPR] = useState<any | null>(null)
   const [reviewMessage, setReviewMessage] = useState("")
@@ -144,19 +176,29 @@ export function ReviewShell() {
     setTimeout(() => setSuccessToast(""), 3500)
   }
 
-  const handleApprove = (prId: string) => {
-    setPullRequests(prev => prev.map(pr => pr.id === prId ? { ...pr, status: "approved" } : pr))
+  const handleApprove = async (prId: string) => {
+    const response = await fetch(`${BACKEND_URL}/api/patch/accept`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspace_path: selectedPR?.repo || "workspace", note: reviewMessage }),
+    })
+    if (!response.ok) return triggerToast(`Could not accept ${prId}.`)
+    setPullRequests(prev => prev.map(pr => pr.id === prId ? { ...pr, status: "accepted" } : pr))
     setSelectedPR(null)
-    triggerToast(`🎉 Pull request ${prId} successfully Approved & Merged!`)
+    triggerToast(`Patch ${prId} accepted.`)
     setTerminalLines(prev => [
       ...prev,
-      `[INFO] Pull Request ${prId} approved.`,
-      `→ Deploying changes to production...`,
-      `[SUCCESS] Deployed successfully!`
+      `[INFO] Patch ${prId} accepted via backend.`
     ])
   }
 
-  const handleReject = (prId: string) => {
+  const handleReject = async (prId: string) => {
+    const response = await fetch(`${BACKEND_URL}/api/patch/reject`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspace_path: selectedPR?.repo || "workspace", note: reviewMessage || "Need adjustments" }),
+    })
+    if (!response.ok) return triggerToast(`Could not request changes for ${prId}.`)
     setPullRequests(prev => prev.map(pr => pr.id === prId ? { ...pr, status: "rejected" } : pr))
     setSelectedPR(null)
     triggerToast(`⚠️ Pull request ${prId} changes requested.`)
@@ -179,6 +221,12 @@ export function ReviewShell() {
           <div className="flex items-center gap-2.5 text-stone-850">
             <CheckSquare2 className="w-4 h-4 text-stone-400" strokeWidth={1.5} />
             <span className="font-medium text-[13px] tracking-wide text-stone-700">Code Reviews</span>
+            {currentBranch && (
+              <>
+                <span className="text-stone-300">•</span>
+                <span className="text-[12px] font-mono text-stone-500">{currentBranch}</span>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -230,7 +278,7 @@ export function ReviewShell() {
             {/* Header Description */}
             <div className="flex flex-col gap-1 mb-6">
               <h1 className="text-xl font-light text-stone-800 tracking-tight">Pull Requests</h1>
-              <p className="text-[13px] text-stone-400 font-light">Approve and deploy code modifications generated by the agent.</p>
+              <p className="text-[13px] text-stone-400 font-light">Review real workspace diffs, accept patches, or request changes.</p>
             </div>
 
             {/* Premium, Minimalist GitHub Integrations list */}
@@ -241,11 +289,18 @@ export function ReviewShell() {
               </div>
               
               <div className="divide-y divide-stone-100">
+                {pullRequests.length === 0 && (
+                  <div className="px-6 py-10 text-center">
+                    <GitPullRequest className="mx-auto mb-3 h-6 w-6 text-stone-300" strokeWidth={1.5} />
+                    <div className="text-[13px] text-stone-700">No workspace changes to review</div>
+                    <div className="mt-1 text-[12px] text-stone-400">Run an autonomous task or edit files; real diffs will appear here.</div>
+                  </div>
+                )}
                 {pullRequests.map((pr) => (
                   <div 
                     key={pr.id} 
                     onClick={() => {
-                      if (pr.status !== "approved") {
+                      if (pr.status !== "accepted") {
                         setSelectedPR(pr)
                       }
                     }}
@@ -259,7 +314,7 @@ export function ReviewShell() {
                     <div className="flex items-center gap-4 min-w-0">
                       <div className={cn(
                         "w-8 h-8 rounded-full flex items-center justify-center border shrink-0",
-                        pr.status === "approved" && "bg-emerald-50 border-emerald-100 text-emerald-600",
+                        pr.status === "accepted" && "bg-emerald-50 border-emerald-100 text-emerald-600",
                         pr.status === "rejected" && "bg-rose-50 border-rose-100 text-rose-600",
                         pr.status === "pending" && "bg-stone-50 border-stone-150 text-stone-600"
                       )}>
@@ -286,19 +341,19 @@ export function ReviewShell() {
                       </div>
                       
                       <div className="w-[85px] flex justify-end">
-                        {pr.status === 'approved' ? (
+                        {pr.status === 'accepted' ? (
                           <span className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-100/50 px-2 py-0.5 rounded-md font-mono font-medium">
-                            Merged
+                            Accepted
                           </span>
                         ) : pr.status === 'rejected' ? (
                           <span className="text-[10px] text-rose-600 bg-rose-50 border border-rose-100/50 px-2 py-0.5 rounded-md font-mono font-medium">
                             Changes
                           </span>
                         ) : (
-                          <button className="flex items-center gap-1 px-2.5 py-1 bg-stone-900 hover:bg-stone-850 text-white rounded-xl text-[11px] transition-colors shadow-sm font-sans">
+                          <span className="flex items-center gap-1 px-2.5 py-1 bg-stone-900 text-white rounded-xl text-[11px] shadow-sm font-sans">
                             <span>Review</span>
                             <ChevronRight className="w-3 h-3" />
-                          </button>
+                          </span>
                         )}
                       </div>
                     </div>
@@ -398,7 +453,7 @@ export function ReviewShell() {
                   className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 bg-stone-900 hover:bg-stone-850 text-white rounded-xl text-[12px] font-medium font-sans transition-colors shadow-sm"
                 >
                   <CheckCircle2 size={14} />
-                  <span>Approve & Merge Code</span>
+                  <span>Accept Patch</span>
                 </button>
               </div>
 

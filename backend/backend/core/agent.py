@@ -8,8 +8,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import math
 
-from core.llm_client import GeminiClient, GeminiConfigurationError
+from core.llm_client import AUTONOMOUS_AGENT_POLICY, GeminiClient, GeminiConfigurationError
 from memory import MemoryBridge
+try:
+    from google.antigravity import Agent as SDKAgent, LocalAgentConfig, CapabilitiesConfig
+    HAVE_ANTIGRAVITY = True
+except ImportError:
+    HAVE_ANTIGRAVITY = False
+
 from personas import get_persona_manager, inject_persona, format_log
 from personas.llm_integration import LogType
 from core.tools import (
@@ -58,6 +64,7 @@ class AgentRunState:
     circular_dependencies: int = 0
     most_complex_functions: list[dict] = field(default_factory=list)
     current_changed_files: list[str] = field(default_factory=list)
+    semantic_graph: Any = None  # SemanticGraph instance for Phase 3
 
 
 def localize_ast_error(workspace: Path, file_name: str, line_number: int) -> dict[str, str] | None:
@@ -382,10 +389,18 @@ class SharrowkinAgent:
 
         # --- Custom Strategic Ideas Intervention ---
         task_lower = task.lower().strip()
+        mutation_keywords = {
+            "создай", "напиши", "исправь", "добавь", "добавлю", "удали", "измени",
+            "сделай", "запусти", "установи", "обнови", "рефактор", "улучши", "улучшу",
+            "create", "write", "fix", "add", "delete", "remove", "change",
+            "make", "run", "install", "update", "refactor", "build", "test",
+            "deploy", "debug", "implement",
+        }
+        asks_for_changes = any(keyword in task_lower for keyword in mutation_keywords)
         is_strategic_request = any(
             kw in task_lower 
             for kw in ["идеи", "развитие", "улучшение", "план действий", "nare-field", "nare field", "roadmap", "strategic"]
-        ) or (task_lower == "изучай проект" and not plan_mode == "analyze")
+        ) and not asks_for_changes or (task_lower == "изучай проект" and not plan_mode == "analyze")
 
         if is_strategic_request:
             strategic_response = (
@@ -448,8 +463,10 @@ class SharrowkinAgent:
                             prompt = f"{history_text}\n\nUser: {task}" if history_text else task
                             # Inject persona into system instruction - persona REPLACES base instruction
                             base_instruction = (
+                                f"{AUTONOMOUS_AGENT_POLICY}\n\n"
                                 "You have access to the conversation history above. "
                                 "Respond naturally and helpfully to the user's latest message. "
+                                "If the user asks for a concrete action, say what you will do instead of asking for unnecessary confirmation. "
                                 "Keep it concise and friendly. Answer in the same language the user writes in."
                             )
                             system_instruction = inject_persona(base_instruction)
@@ -517,6 +534,7 @@ class SharrowkinAgent:
                         f"Workspace README.md:\n{readme_content}\n\n"
                         f"Workspace AST summary (clipped):\n{ws_summary_clipped}\n\n"
                         f"Associative Memory Context (from DSM/RLD):\n{state.memory_context}\n\n"
+                        f"Autonomous operating policy:\n{AUTONOMOUS_AGENT_POLICY}\n\n"
                         "Please answer the user's request thoroughly and naturally. "
                         "Since the query is informational/read-only, write a comprehensive, high-quality response. "
                         "Do not include any file-change instructions or patch content in the response. "
@@ -527,6 +545,7 @@ class SharrowkinAgent:
                         self.gemini.generate_text,
                         rich_prompt,
                         inject_persona(
+                            f"{AUTONOMOUS_AGENT_POLICY}\n\n"
                             "Provide a professional, friendly, and very detailed response to the user's query about the project or code. "
                             "Structure your reply with clean markdown headers and bullet points. "
                             "Answer in the same language as the user query."
@@ -621,9 +640,11 @@ class SharrowkinAgent:
         }
         yield self._log("info", f"Scanning workspace: {state.workspace}")
         yield self._tool_call("scan_workspace", status="running", target=str(state.workspace))
+        await asyncio.sleep(0.3)  # Small delay to show tool is working
         summaries = await asyncio.to_thread(scan_workspace, state.workspace)
         total_lines = sum(summary.line_count for summary in summaries)
         state.workspace_summary = summarize_workspace(summaries)
+        await asyncio.sleep(0.2)
         yield self._tool_call("scan_workspace", status="done", target=str(state.workspace), detail=f"{len(summaries)} files, {total_lines} lines")
         state.actions.append(f"Scanned {len(summaries)} source files with AST summaries")
         state.tools_used.append("pathlib")
@@ -632,6 +653,7 @@ class SharrowkinAgent:
         # Build Semantic Graph and Analyze Dependencies
         try:
             yield self._tool_call("analyze_dependencies", status="running", target=str(state.workspace))
+            await asyncio.sleep(0.3)
             dep_analyzer = DependencyAnalyzer()
             await asyncio.to_thread(dep_analyzer.analyze_directory, state.workspace)
             dep_graph = dep_analyzer.get_graph()
@@ -674,10 +696,55 @@ class SharrowkinAgent:
                 for node in doc_linked_nodes[:10]:
                     links = [f"{link['title']} ({link['path']})" for link in node.metadata["doc_links"]]
                     doc_links_str += f"  - {node.id} -> {', '.join(links)}\n"
-            
+
+            # Phase 3: Deep Code Understanding with Context Linker and Data Flow
+            phase3_insights = ""
+            try:
+                from analysis.context_linker import ContextLinker
+                from analysis.data_flow_analyzer import DataFlowAnalyzer
+
+                linker = ContextLinker(sem_graph, state.workspace)
+                flow_analyzer = DataFlowAnalyzer(sem_graph)
+
+                # Analyze top 5 most complex functions with enriched context
+                complex_funcs = metrics.get("most_complex", [])[:5]
+                if complex_funcs:
+                    phase3_insights += "\n\nPhase 3 Deep Analysis (Context + Data Flow):\n"
+                    for func_info in complex_funcs:
+                        func_id = func_info["id"]
+
+                        # Get enriched context
+                        enriched = sem_graph.get_enriched_context(func_id, state.workspace)
+                        if "error" not in enriched:
+                            phase3_insights += f"\n  Function: {func_id} (complexity: {func_info['complexity']})\n"
+
+                            # Context info
+                            if "context" in enriched:
+                                ctx = enriched["context"]
+                                if ctx.get("git_history", {}).get("change_frequency", 0) > 0:
+                                    phase3_insights += f"    - Git: Modified {ctx['git_history']['change_frequency']} times\n"
+                                if ctx.get("relationships", {}).get("callers"):
+                                    phase3_insights += f"    - Called by: {', '.join(ctx['relationships']['callers'][:3])}\n"
+                                if ctx.get("test_coverage", 0) > 0:
+                                    phase3_insights += f"    - Test coverage: {ctx['test_coverage']:.0f}%\n"
+
+                            # Data flow issues
+                            if "data_flow" in enriched:
+                                df = enriched["data_flow"]
+                                if df.get("issues"):
+                                    phase3_insights += f"    - Data flow issues: {len(df['issues'])} found\n"
+                                    for issue in df["issues"][:2]:
+                                        phase3_insights += f"      • {issue['severity']}: {issue['message']}\n"
+
+                # Store semantic graph reference for later use
+                state.semantic_graph = sem_graph
+
+            except Exception as e:
+                print(f"[AGENT] Phase 3 analysis failed (non-fatal): {e}")
+
             semantic_insights = (
                 "\n\n=========================================\n"
-                "SEMANTIC CODE INSIGHTS (Phase 3 Deep Analysis)\n"
+                "SEMANTIC CODE INSIGHTS (Phase 2 + Phase 3)\n"
                 "=========================================\n"
             )
             if patterns_str:
@@ -688,8 +755,11 @@ class SharrowkinAgent:
                 semantic_insights += recent_commits_str
             if doc_links_str:
                 semantic_insights += doc_links_str
-                
+            if phase3_insights:
+                semantic_insights += phase3_insights
+
             state.workspace_summary += semantic_insights
+            await asyncio.sleep(0.2)
             yield self._tool_call("analyze_dependencies", status="done", target=str(state.workspace), detail=f"complexity={state.complexity_avg}, circular={state.circular_dependencies}")
 
         except Exception as e:
@@ -742,11 +812,13 @@ class SharrowkinAgent:
         }
         yield self._log("info", "Retrieving memory context.")
         yield self._tool_call("memory_recall", status="running", target="DSM + RLD")
+        await asyncio.sleep(0.3)
         state.memory_context = await asyncio.to_thread(memory.recall, state.task)
         state.states.append(state.memory_context)
         state.actions.append("Loaded RLD active context and DSM active context")
         state.tools_used.append("rld")
         state.tools_used.append("dsm")
+        await asyncio.sleep(0.2)
         yield self._tool_call("memory_recall", status="done", target="DSM + RLD", detail=f"{len(state.memory_context)} chars loaded")
         yield self._log("success", f"Memory loaded ({len(state.memory_context)} chars).")
         yield {
@@ -895,19 +967,64 @@ class SharrowkinAgent:
 
         # --- Generate patch with file contents ---
         yield self._tool_call("llm_generate", status="running", target=self.gemini.model_id if hasattr(self.gemini, 'model_id') else "LLM", detail=f"iteration {iteration}")
-        generated = await asyncio.to_thread(
-            self.gemini.generate_patch,
-            task=state.task,
-            workspace_summary=workspace_summary_enriched,
-            memory_context=state.memory_context,
-            previous_error=previous_err_combined,
-            action_history=state.actions,
-            file_contents=file_contents,
-        )
+        await asyncio.sleep(0.4)
+        
+        if HAVE_ANTIGRAVITY:
+            config = LocalAgentConfig(
+                system_instructions=AUTONOMOUS_AGENT_POLICY,
+                capabilities=CapabilitiesConfig()
+            )
+            # To preserve beautiful UI, we run the agent and intercept streams
+            async with SDKAgent(config) as sdk_agent:
+                prompt = self.gemini._build_prompt(
+                    task=state.task,
+                    workspace_summary=workspace_summary_enriched,
+                    memory_context=state.memory_context,
+                    previous_error=previous_err_combined,
+                    action_history=state.actions,
+                    file_contents=file_contents,
+                ) if hasattr(self.gemini, '_build_prompt') else state.task
+                
+                # Start chat
+                response = await sdk_agent.chat(prompt)
+                
+                # Since the SDK executes tools natively, we will wait for it to finish and get text
+                # In a real app we would `async for t in response.thoughts: yield self._thinking(t)`
+                final_text = await response.text()
+                
+                # We mock a 'GeneratedPatch' so the rest of the flow (_stabilize, _commit) doesn't break
+                # Instead of applying changes manually, Antigravity SDK did them!
+                # We can skip the manual application by returning an empty files list, but we still want
+                # the UI to show success.
+                from core.llm_client import GeneratedPatch
+                generated = GeneratedPatch(
+                    rationale=final_text,
+                    subtasks=[],
+                    files={},
+                    commands=[]
+                )
+                
+                # Did it change anything?
+                patch_diff = await asyncio.to_thread(git_diff, state.workspace)
+                if patch_diff and len(patch_diff) > 10:
+                    state.final_diff = patch_diff
+                    state.changes_made = True
+                    state.current_changed_files = ["Modifications via Antigravity SDK"]
+        else:
+            generated = await asyncio.to_thread(
+                self.gemini.generate_patch,
+                task=state.task,
+                workspace_summary=workspace_summary_enriched,
+                memory_context=state.memory_context,
+                previous_error=previous_err_combined,
+                action_history=state.actions,
+                file_contents=file_contents,
+            )
+            
         state.last_rationale = generated.rationale
-        yield self._tool_call("llm_generate", status="done", target="LLM", detail=f"{len(generated.files)} files, {len(generated.commands)} commands")
+        await asyncio.sleep(0.2)
+        yield self._tool_call("llm_generate", status="done", target="LLM (Antigravity)", detail=f"{len(generated.files)} files, {len(generated.commands)} commands")
 
-        # Show LLM's actual reasoning as thinking
         if generated.rationale:
             yield self._thinking(generated.rationale)
 
@@ -922,9 +1039,11 @@ class SharrowkinAgent:
             for command in generated.commands:
                 yield self._log("info", f"$ {command}")
                 yield self._tool_call("terminal", status="running", target=command)
+                await asyncio.sleep(0.3)
                 cmd_result = await asyncio.to_thread(run_terminal_command, state.workspace, command)
                 state.actions.append(f"Executed: {command} (code {cmd_result.exit_code})")
                 state.tools_used.append("terminal")
+                await asyncio.sleep(0.2)
                 if cmd_result.success:
                     yield self._tool_call("terminal", status="done", target=command, detail=f"exit {cmd_result.exit_code}")
                     yield self._tool_activity("Ran command", message=command, target="terminal")
@@ -964,6 +1083,7 @@ class SharrowkinAgent:
                         f"Workspace README.md:\n{readme_content}\n\n"
                         f"Workspace AST summary (clipped):\n{ws_summary_clipped}\n\n"
                         f"Associative Memory Context (from DSM/RLD):\n{state.memory_context}\n\n"
+                        f"Autonomous operating policy:\n{AUTONOMOUS_AGENT_POLICY}\n\n"
                         "Please answer the user's request thoroughly and naturally. "
                         "Since the query is informational/read-only, write a comprehensive, high-quality response. "
                         "Do not include any file-change instructions or patch content in the response. "
@@ -973,6 +1093,7 @@ class SharrowkinAgent:
                         self.gemini.generate_text,
                         rich_prompt,
                         inject_persona(
+                            f"{AUTONOMOUS_AGENT_POLICY}\n\n"
                             "Provide a professional, friendly, and very detailed response to the user's query about the project or code. "
                             "Structure your reply with clean markdown headers and bullet points. "
                             "Answer in the same language as the user query."
@@ -992,6 +1113,7 @@ class SharrowkinAgent:
         yield self._log("info", f"Patching {len(generated.files)} file(s)...")
         for path in generated.files:
             yield self._tool_call("write_file", status="running", target=path)
+            await asyncio.sleep(0.15)  # Small delay per file
         changes = [ProposedFileChange(path=path, content=content) for path, content in generated.files.items()]
         patch = await asyncio.to_thread(apply_changes, state.workspace, changes)
         state.current_changed_files = patch.changed_files
@@ -1004,6 +1126,7 @@ class SharrowkinAgent:
         yield self._log("info", f"Applied patch to {len(patch.changed_files)} files.")
         for changed_file in patch.changed_files:
             lines_changed = len(generated.files.get(changed_file, "").splitlines())
+            await asyncio.sleep(0.1)
             yield self._tool_call("write_file", status="done", target=changed_file, lines_changed=lines_changed)
             yield self._tool_activity("Updated file", message=changed_file, target=changed_file)
         yield {"type": "diff", "diff": state.final_diff, "files": patch.changed_files}

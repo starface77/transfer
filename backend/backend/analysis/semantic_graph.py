@@ -215,6 +215,102 @@ class SemanticGraph:
             ],
         }
 
+    def get_context_for_node(self, node_id: str, workspace: Path) -> str:
+        """Get rich context for a node using ContextLinker."""
+        try:
+            from .context_linker import ContextLinker
+            linker = ContextLinker(self, workspace)
+            return linker.get_context_summary(node_id)
+        except Exception as e:
+            return f"Context unavailable: {e}"
+
+    def analyze_change_impact(self, node_id: str, workspace: Path) -> dict[str, Any]:
+        """Analyze the impact of changing a node."""
+        try:
+            from .context_linker import ContextLinker
+            linker = ContextLinker(self, workspace)
+            return linker.get_change_impact(node_id)
+        except Exception as e:
+            return {"error": str(e)}
+
+    def analyze_data_flow(self, node_id: str) -> dict[str, Any]:
+        """Analyze data flow in a function node."""
+        node = self.get_node(node_id)
+        if not node:
+            return {"error": "Node not found"}
+
+        try:
+            from .data_flow_analyzer import DataFlowAnalyzer
+            analyzer = DataFlowAnalyzer(self)
+            return analyzer.analyze_function(node)
+        except Exception as e:
+            return {"error": str(e)}
+
+    def find_related_code(self, node_id: str, workspace: Path, max_results: int = 10) -> list[tuple[str, str, float]]:
+        """Find code entities related to the given node."""
+        try:
+            from .context_linker import ContextLinker
+            linker = ContextLinker(self, workspace)
+            return linker.find_related_code(node_id, max_results)
+        except Exception as e:
+            print(f"Warning: Could not find related code: {e}")
+            return []
+
+    def get_enriched_context(self, node_id: str, workspace: Path) -> dict[str, Any]:
+        """Get comprehensive enriched context for a node (Phase 3 integration)."""
+        node = self.get_node(node_id)
+        if not node:
+            return {"error": "Node not found"}
+
+        result = {
+            "node_id": node_id,
+            "name": node.name,
+            "type": node.node_type.value,
+            "file_path": node.file_path,
+            "line_number": node.line_number,
+        }
+
+        # Add context from ContextLinker
+        try:
+            from .context_linker import ContextLinker
+            linker = ContextLinker(self, workspace)
+            context = linker.get_context(node_id)
+            if context:
+                result["context"] = {
+                    "documentation": context.docstring,
+                    "git_history": {
+                        "last_modified_by": context.last_modified_by,
+                        "last_modified_date": context.last_modified_date,
+                        "change_frequency": context.change_frequency,
+                    },
+                    "relationships": {
+                        "callers": context.callers[:5],
+                        "callees": context.callees[:5],
+                        "dependencies": context.dependencies[:5],
+                    },
+                    "patterns": context.related_patterns,
+                    "test_coverage": context.test_coverage,
+                }
+        except Exception as e:
+            result["context_error"] = str(e)
+
+        # Add data flow analysis for functions
+        if node.node_type in (CodeNodeType.FUNCTION, CodeNodeType.METHOD):
+            try:
+                from .data_flow_analyzer import DataFlowAnalyzer
+                analyzer = DataFlowAnalyzer(self)
+                flow_result = analyzer.analyze_function(node)
+                if "error" not in flow_result:
+                    result["data_flow"] = {
+                        "total_variables": flow_result.get("total_variables", 0),
+                        "complexity_score": flow_result.get("complexity_score", 0),
+                        "issues": flow_result.get("issues", []),
+                    }
+            except Exception as e:
+                result["data_flow_error"] = str(e)
+
+        return result
+
     def visualize(self, root_id: str | None = None, max_depth: int = 3) -> str:
         """Generate a text visualization of the semantic graph."""
         lines = ["Semantic Code Graph", "=" * 50]

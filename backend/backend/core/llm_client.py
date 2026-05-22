@@ -27,6 +27,31 @@ class GeneratedPatch:
     commands: list[str]
 
 
+AUTONOMOUS_AGENT_POLICY = """
+You are Sharrowkin, a local autonomous developer agent.
+Operate with high agency:
+- Do not ask the user follow-up questions unless the task is impossible, destructive, or requires external credentials.
+- Infer safe defaults from the repository, existing conventions, and conversation context.
+- For ambiguous implementation details, choose the smallest reversible path and state the assumption in the rationale.
+- Read/inspect relevant files before changing them; preserve public APIs and existing style.
+- After edits, run the cheapest relevant validation commands available in the repository.
+- If validation fails, diagnose the concrete failure and choose a different fix path instead of repeating the same patch.
+- Never include secrets, never exfiltrate files, and never run git commit/push/merge commands.
+""".strip()
+
+
+def _autonomous_json_system_prompt() -> str:
+    return (
+        f"{AUTONOMOUS_AGENT_POLICY}\n\n"
+        "Return only strict JSON with keys: rationale, subtasks, commands, and files. "
+        " - 'rationale': concise explanation of decisions, assumptions, and validation plan.\n"
+        " - 'subtasks': list of decomposed subtasks for complex goals.\n"
+        " - 'commands': terminal commands to execute for inspection or validation when useful; do not include git commit/push/merge.\n"
+        " - 'files': object mapping relative file paths to complete replacement contents.\n"
+        "Do not wrap JSON in markdown."
+    )
+
+
 def _get_response_text(response: requests.Response) -> str:
     content_type = response.headers.get("content-type", "")
     if "text/event-stream" in content_type:
@@ -241,8 +266,8 @@ class GeminiClient:
             "explain", "analyze", "describe", "what is this project", "study", "show me", "структуру"
         }
         mutate_keywords = {
-            "создай", "напиши", "исправь", "добавь", "удали", "измени",
-            "сделай", "запусти", "установи", "обнови", "рефактор",
+            "создай", "напиши", "исправь", "добавь", "добавлю", "удали", "измени",
+            "сделай", "запусти", "установи", "обнови", "рефактор", "улучши", "улучшу",
             "create", "write", "fix", "add", "delete", "remove", "change",
             "make", "run", "install", "update", "refactor", "build", "test",
             "deploy", "debug", "implement"
@@ -256,8 +281,8 @@ class GeminiClient:
         
         # Short messages (<=3 words) without code-related keywords are likely conversational
         code_keywords = {
-            "создай", "напиши", "исправь", "добавь", "удали", "измени",
-            "сделай", "запусти", "установи", "обнови", "рефактор",
+            "создай", "напиши", "исправь", "добавь", "добавлю", "удали", "измени",
+            "сделай", "запусти", "установи", "обнови", "рефактор", "улучши", "улучшу",
             "изучи", "изучай", "просканируй", "проанализируй", "проект", "репозиторий",
             "create", "write", "fix", "add", "delete", "remove", "change",
             "make", "run", "install", "update", "refactor", "build", "test",
@@ -341,15 +366,7 @@ class GeminiClient:
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             }
-            system_prompt = (
-                "You are Sharrowkin, a local autonomous developer agent. "
-                "Return only strict JSON with keys: rationale, subtasks, commands, and files. "
-                " - 'rationale': short explanation of your reasoning.\n"
-                " - 'subtasks': list of decomposed subtasks for complex goals (Task Decomposition).\n"
-                " - 'commands': list of terminal commands to execute (e.g. npm install, pip install, git commit) (Tool Router).\n"
-                " - 'files': object mapping relative file paths to complete replacement contents (Multi-file Reasoning).\n"
-                "Do not wrap JSON in markdown. Do not include secrets."
-            )
+            system_prompt = _autonomous_json_system_prompt()
             payload = {
                 "model": self.omniroute_model,
                 "max_tokens": 8192,
@@ -431,15 +448,7 @@ class GeminiClient:
                 "systemInstruction": {
                     "parts": [
                         {
-                            "text": (
-                                "You are Sharrowkin, a local autonomous developer agent. "
-                                "Return only strict JSON with keys: rationale, subtasks, commands, and files. "
-                                " - 'rationale': short explanation of your reasoning.\n"
-                                " - 'subtasks': list of decomposed subtasks for complex goals (Task Decomposition).\n"
-                                " - 'commands': list of terminal commands to execute (e.g. npm install, pip install, git commit) (Tool Router).\n"
-                                " - 'files': object mapping relative file paths to complete replacement contents (Multi-file Reasoning).\n"
-                                "Do not wrap JSON in markdown. Do not include secrets."
-                            )
+                            "text": _autonomous_json_system_prompt()
                         }
                     ]
                 },
@@ -471,6 +480,8 @@ class GeminiClient:
         file_contents: dict[str, str] = None,
     ) -> str:
         sections = [
+            "AUTONOMOUS OPERATING POLICY",
+            AUTONOMOUS_AGENT_POLICY,
             "TASK",
             task,
             "WORKSPACE AST SUMMARY",
@@ -494,7 +505,8 @@ class GeminiClient:
         sections.append(
             "Generate the smallest safe patch. Return complete replacement text only for files you change. "
             "You MUST use the actual file contents provided above as the base for your edits. "
-            "You can specify shell commands in 'commands' if you need to install packages, run scripts, or compile things."
+            "You can specify shell commands in 'commands' if you need to inspect, install packages, run scripts, or compile things. "
+            "Prefer autonomous progress over asking questions: make a safe assumption, implement, and validate."
         )
         return "\n\n".join(sections)
 
@@ -668,4 +680,3 @@ def parse_generated_patch(raw: str) -> GeneratedPatch:
         files=files,
         commands=commands
     )
-

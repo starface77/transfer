@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useSearchParams } from "next/navigation"
-import { MessageSquareDashed, ArrowDownToLine } from "lucide-react"
+import { ArrowDownToLine, MessageSquareDashed, PanelRight } from "lucide-react"
 import { MessageList } from "./message-list"
 import { Composer, type AIModel } from "./composer"
 import { Button } from "@/components/ui/button"
@@ -219,6 +219,7 @@ export function ChatShell() {
     "→ System ready. Awaiting input.",
   ])
   const [isRunningTask, setIsRunningTask] = useState(false)
+  const [activeTaskPlan, setActiveTaskPlan] = useState<TaskPlan[]>([])
   const [currentInput, setCurrentInput] = useState("")
   const [terminalDock, setTerminalDock] = useState<"sidebar" | "bottom">("sidebar")
   const [isDraggingTerminal, setIsDraggingTerminal] = useState(false)
@@ -614,6 +615,7 @@ export function ChatShell() {
             } else if (data.type === "task_plan") {
               // Hierarchical task plan from planner
               const plan = data.plan || []
+              setActiveTaskPlan(plan)
               setMessages(prev => prev.map(msg => {
                 if (msg.id === assistantMessage.id) {
                   return { ...msg, taskPlan: plan }
@@ -641,6 +643,7 @@ export function ChatShell() {
                 })
               }
 
+              setActiveTaskPlan(prev => updateTaskStatus(prev))
               setMessages(prev => prev.map(msg => {
                 if (msg.id === assistantMessage.id && msg.taskPlan) {
                   return { ...msg, taskPlan: updateTaskStatus(msg.taskPlan) }
@@ -930,7 +933,7 @@ export function ChatShell() {
   }, [STORAGE_KEY, resetAgentWorkspace])
 
   return (
-    <div className="h-dvh bg-background flex overflow-hidden">
+    <div className="h-dvh bg-white flex overflow-hidden text-stone-900">
       {/* Left Sidebar */}
       <LeftSidebar isOpen={leftSidebarOpen} onToggle={() => setLeftSidebarOpen(!leftSidebarOpen)} />
 
@@ -938,16 +941,27 @@ export function ChatShell() {
       <div className="flex-1 flex overflow-hidden relative">
         
         {/* Main Chat Area - Center */}
-        <div className={cn("flex-1 flex flex-col relative min-w-0 transition-all duration-300", activeDiffFile ? "max-w-[50%]" : "max-w-full")}>
-          <Button
-            onClick={clearChat}
-            variant="ghost"
-            size="icon"
-            className="absolute top-4 left-4 z-20 h-9 w-9 rounded-xl bg-white/80 backdrop-blur-sm hover:bg-stone-100 text-stone-500 hover:text-stone-700 border border-stone-200/50 shadow-sm transition-all"
-            aria-label="Reset chat"
-          >
-            <MessageSquareDashed className="w-4 h-4" />
-          </Button>
+        <div className={cn("flex-1 flex flex-col relative min-w-0 transition-all duration-300 bg-white", activeDiffFile ? "max-w-[50%]" : "max-w-full")}>
+          <div className="flex h-12 shrink-0 items-center justify-between px-5 text-[13px]">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="truncate font-normal text-stone-900">{workspacePath}</span>
+              <span className="hidden rounded-full bg-stone-50 px-2 py-1 text-[12px] text-stone-500 sm:inline-flex">agent workspace</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-stone-500">
+              <Button
+                onClick={clearChat}
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-lg text-stone-500 hover:bg-stone-100 hover:text-stone-900"
+                aria-label="Reset chat"
+              >
+                <MessageSquareDashed className="w-4 h-4" />
+              </Button>
+              <button onClick={() => setRightSidebarOpen(!rightSidebarOpen)} className="rounded-lg p-2 transition-colors hover:bg-stone-100" aria-label="Toggle right panel">
+                <PanelRight size={16} strokeWidth={1.6} />
+              </button>
+            </div>
+          </div>
 
           <div className="flex-1 overflow-hidden">
             <MessageList 
@@ -1081,6 +1095,7 @@ export function ChatShell() {
         backendConnected={backendConnected}
         cognitiveState={cognitiveState}
         setCognitiveState={setCognitiveState}
+        activeTaskPlan={activeTaskPlan}
       />
     </div>
   )

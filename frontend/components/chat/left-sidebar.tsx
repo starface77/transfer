@@ -1,328 +1,200 @@
-'use client';
+"use client"
 
-import { useState, useEffect, useCallback } from 'react';
-import Image from 'next/image';
-import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { ChevronDown, Menu, X, Plus, MessageSquare, BookOpen, CheckSquare2, Settings, Palette, FolderTree } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { getAgentName } from '@/lib/persona-api';
+import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { BookOpen, Bot, ChevronDown, CircleHelp, GitPullRequest, LayoutPanelLeft, Menu, MessageCircleQuestion, Plus, Settings, Workflow, X } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { getAgentName } from "@/lib/persona-api"
 
 interface LeftSidebarProps {
-  isOpen: boolean;
-  onToggle: () => void;
+  isOpen: boolean
+  onToggle: () => void
 }
 
-export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const activeSessionId = searchParams?.get('session') || 'session-1';
-  const [agentName, setAgentName] = useState('Sharrowkin');
+const NAV_ITEMS = [
+  { icon: Bot, label: "Sessions", href: "/chat" },
+  { icon: MessageCircleQuestion, label: "Ask", href: "/chat" },
+  { icon: BookOpen, label: "Wiki", href: "/wiki" },
+  { icon: GitPullRequest, label: "Review", href: "/review" },
+  { icon: Workflow, label: "Autonomous", href: "/autonomous" },
+]
 
-  // Fetch agent name on mount and when persona changes
+export function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
+  const pathname = usePathname()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const activeSessionId = searchParams?.get("session") || "session-1"
+  const [agentName, setAgentName] = useState("Sharrowkin")
+  const [sessions, setSessions] = useState<Array<{ id: string; label: string }>>([])
+  const [recentOpen, setRecentOpen] = useState(true)
+  const [sessionSearchOpen, setSessionSearchOpen] = useState(false)
+  const [sessionSearch, setSessionSearch] = useState("")
+
   useEffect(() => {
     const fetchAgentName = async () => {
       try {
-        const response = await getAgentName();
-        setAgentName(response.agent_name);
-      } catch (error) {
-        console.error('Failed to fetch agent name:', error);
-      }
-    };
+        const response = await getAgentName()
+        setAgentName(response.agent_name)
+      } catch {}
+    }
 
-    fetchAgentName();
+    fetchAgentName()
+    window.addEventListener("persona-changed", fetchAgentName)
+    return () => window.removeEventListener("persona-changed", fetchAgentName)
+  }, [])
 
-    // Listen for persona change events
-    const handlePersonaChange = () => {
-      fetchAgentName();
-    };
-
-    window.addEventListener('persona-changed', handlePersonaChange);
-    return () => window.removeEventListener('persona-changed', handlePersonaChange);
-  }, []);
-
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    sessions: true,
-    recent: true,
-  });
-
-  // --- SESSIONS STATE ---
-  const [sessions, setSessions] = useState<Array<{ id: string; label: string }>>([]);
-
-  // --- RECENT COMMANDS STATE ---
-  const [recentCommands, setRecentCommands] = useState<string[]>([]);
-
-  // Load sessions and recent commands on mount
   useEffect(() => {
-    // 1. Sessions List
-    const storedSessions = localStorage.getItem('sharrowkin-sessions-list');
+    const storedSessions = localStorage.getItem("sharrowkin-sessions-list")
     if (storedSessions) {
-      setSessions(JSON.parse(storedSessions));
-    } else {
-      const defaultSessions = [
-        { id: 'session-1', label: 'New Chat' },
-      ];
-      localStorage.setItem('sharrowkin-sessions-list', JSON.stringify(defaultSessions));
-      setSessions(defaultSessions);
+      setSessions(JSON.parse(storedSessions))
+      return
     }
 
-    // 2. Recent Commands List
-    const storedCommands = localStorage.getItem('sharrowkin-recent-commands');
-    if (storedCommands) {
-      setRecentCommands(JSON.parse(storedCommands));
-    }
-  }, []);
+    const defaultSessions = [{ id: "session-1", label: "New agent session" }]
+    localStorage.setItem("sharrowkin-sessions-list", JSON.stringify(defaultSessions))
+    setSessions(defaultSessions)
+  }, [])
 
-  // Watch for custom event updates to recent commands (when user submits a command in terminal)
-  useEffect(() => {
-    const handleCommandsUpdate = () => {
-      const storedCommands = localStorage.getItem('sharrowkin-recent-commands');
-      if (storedCommands) {
-        setRecentCommands(JSON.parse(storedCommands));
-      }
-    };
-    window.addEventListener('sharrowkin-commands-updated', handleCommandsUpdate);
-    return () => window.removeEventListener('sharrowkin-commands-updated', handleCommandsUpdate);
-  }, []);
-
-  // Add a new session
-  const handleNewChat = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const newId = `session-${Date.now()}`;
-    const newSession = {
-      id: newId,
-      label: `New Chat Session ${sessions.length + 1}`,
-    };
-    const updatedSessions = [newSession, ...sessions];
-    localStorage.setItem('sharrowkin-sessions-list', JSON.stringify(updatedSessions));
-    setSessions(updatedSessions);
-
-    // Redirect to the new chat session page
-    router.push(`/chat?session=${newId}`);
-  }, [sessions, router]);
-
-  // Click on a recent command (sends it directly to the terminal on the right side)
-  const handleCommandClick = useCallback((cmd: string) => {
-    // Custom window event which is listened to by the active TerminalEmulator component
-    window.dispatchEvent(new CustomEvent('sharrowkin-terminal-cmd', { detail: cmd }));
-  }, []);
-
-  // --- APPLE MINIMALIST SIDEBAR RESIZING ---
-  const [width, setWidth] = useState(248);
-  const [isResizing, setIsResizing] = useState(false);
-
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizing(true);
-    const startX = e.clientX;
-    const startWidth = width;
-
-    const doDrag = (moveEvent: MouseEvent) => {
-      const deltaX = moveEvent.clientX - startX;
-      const nextWidth = Math.max(200, Math.min(startWidth + deltaX, 380));
-      setWidth(nextWidth);
-    };
-
-    const stopDrag = () => {
-      setIsResizing(false);
-      document.removeEventListener('mousemove', doDrag);
-      document.removeEventListener('mouseup', stopDrag);
-    };
-
-    document.addEventListener('mousemove', doDrag);
-    document.addEventListener('mouseup', stopDrag);
-  }, [width]);
-
-  const toggleSection = (section: string) => {
-    setExpandedSections((prev) => ({
-      ...prev,
-      [section]: !prev[section],
-    }));
-  };
+  const handleNewChat = useCallback(() => {
+    const newId = `session-${Date.now()}`
+    const nextSession = { id: newId, label: `New agent session ${sessions.length + 1}` }
+    const nextSessions = [nextSession, ...sessions]
+    localStorage.setItem("sharrowkin-sessions-list", JSON.stringify(nextSessions))
+    setSessions(nextSessions)
+    router.push(`/chat?session=${newId}`)
+  }, [router, sessions])
 
   return (
     <>
-      {/* Mobile Toggle Button */}
       <button
         onClick={onToggle}
-        className="fixed left-4 top-4 z-50 lg:hidden p-2 hover:bg-stone-100 rounded-full transition-colors"
+        className="fixed left-3 top-3 z-50 rounded-lg p-2 text-stone-500 transition-colors hover:bg-stone-100 lg:hidden"
         aria-label="Toggle sidebar"
       >
-        {isOpen ? <X strokeWidth={1.5} size={20} className="text-stone-700" /> : <Menu strokeWidth={1.5} size={20} className="text-stone-700" />}
+        {isOpen ? <X strokeWidth={1.7} size={18} /> : <Menu strokeWidth={1.7} size={18} />}
       </button>
 
-      {/* Sidebar - Feather-light Apple-like aesthetic */}
       <aside
-        style={{ width: isOpen ? `${width}px` : '0px' }}
         className={cn(
-          "fixed lg:relative z-40 h-full bg-white flex flex-col overflow-hidden border-r border-stone-200/70 select-none relative shrink-0",
-          isResizing ? "transition-none" : "transition-all duration-300 ease-in-out",
-          !isOpen && "border-none"
+          "fixed lg:relative z-40 h-full shrink-0 overflow-hidden bg-[#f7f7f7] text-stone-700 transition-all duration-300 ease-out",
+          isOpen ? "w-[296px]" : "w-0",
         )}
       >
-
-        {/* Apple Style Resizer handle on the right edge */}
-        {isOpen && (
-          <div
-            onMouseDown={handleMouseDown}
-            className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-stone-200/50 active:bg-stone-300/60 transition-colors z-50 group flex items-center justify-center"
-            title="Drag right edge to resize"
-          >
-            <div className="w-[1.5px] h-8 bg-stone-200/40 group-hover:bg-stone-400/60 group-active:bg-stone-500 rounded-full transition-colors" />
-          </div>
-        )}
-
-        {/* Branding Header */}
-        <div className="px-4 pt-5 pb-3 flex items-center gap-2.5">
-          <div className="flex items-center justify-center shrink-0 w-7 h-7">
-            <Image
-              src="/images/logo.png"
-              alt="NARE Labs"
-              width={22}
-              height={22}
-              quality={100}
-              priority
-              unoptimized
-              className="opacity-90 object-contain"
-            />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[13.5px] font-medium tracking-[-0.01em] text-stone-600">{agentName}</div>
-            <div className="text-[11px] font-normal text-stone-400">Local coding workspace</div>
-          </div>
-        </div>
-
-        {/* New Chat Button */}
-        <div className="px-3 pb-3">
-          <button
-            onClick={handleNewChat}
-            className="w-full flex items-center justify-between rounded-xl border border-stone-200/70 bg-stone-50/50 px-3 py-2 text-left transition-colors hover:bg-stone-100/70 group"
-          >
-            <span className="text-[13px] font-normal text-stone-650 group-hover:text-stone-900 transition-colors">New Chat</span>
-            <Plus strokeWidth={1.5} size={16} className="text-stone-400 group-hover:text-stone-600 transition-colors" />
-          </button>
-        </div>
-
-        {/* Main Navigation */}
-        <div className="flex-1 overflow-y-auto px-2.5 py-2 space-y-5 no-scrollbar">
-
-          {/* Main Links */}
-          <div className="space-y-0.5">
-            {[
-              { icon: MessageSquare, label: 'Chat', href: '/chat' },
-              { icon: FolderTree, label: 'Workflow', href: '/workflow' },
-              { icon: BookOpen, label: 'Wiki', href: '/wiki' },
-              { icon: CheckSquare2, label: 'Review', href: '/review' },
-              { icon: Settings, label: 'Settings', href: '/settings' },
-            ].map(({ icon: Icon, label, href }) => {
-              const active = pathname?.startsWith(href);
-              return (
-                <Link
-                  key={label}
-                  href={href === '/chat' ? `/chat?session=${activeSessionId}` : href}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 border border-transparent",
-                    active
-                      ? 'bg-stone-100/80 border-stone-200/60 text-stone-900'
-                      : 'text-stone-500 hover:bg-stone-50 hover:text-stone-900'
-                  )}
-                >
-                  <Icon size={16} strokeWidth={1.5} className={active ? 'text-stone-800' : 'text-stone-400'} />
-                  <span className="text-[13px] font-normal">{label}</span>
-                </Link>
-              );
-            })}
-          </div>
-
-          {/* Sessions Section */}
-          <div className="pt-2">
-            <button
-              onClick={() => toggleSection('sessions')}
-              className="w-full flex items-center justify-between px-3 py-1.5 group"
-            >
-              <span className="text-[11px] font-normal text-stone-400 uppercase tracking-[0.14em] group-hover:text-stone-500 transition-colors">Sessions</span>
-              <ChevronDown
-                strokeWidth={1.5}
-                size={14}
-                className={`text-stone-400/70 transition-transform duration-200 ${expandedSections.sessions ? 'rotate-0' : '-rotate-90'}`}
-              />
+        <div className="flex h-full flex-col">
+          <div className="flex h-12 items-center justify-between px-3">
+            <div className="flex min-w-0 items-center gap-2 px-1.5 py-1 text-left">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-stone-200 text-[11px] font-medium text-stone-600">D</span>
+              <span className="truncate text-[13px] font-medium text-stone-900">Local workspace</span>
+            </div>
+            <button onClick={onToggle} className="rounded-md p-1.5 text-stone-500 transition-colors hover:bg-stone-200/50" aria-label="Collapse sidebar">
+              <LayoutPanelLeft size={16} strokeWidth={1.5} />
             </button>
+          </div>
 
-            {expandedSections.sessions && (
-              <div className="mt-1 space-y-0.5">
-                {sessions.map((session) => {
-                  const isActive = activeSessionId === session.id;
+          <nav className="px-2.5 py-2">
+            <div className="space-y-0.5">
+              {NAV_ITEMS.map(({ icon: Icon, label, href, badge }) => {
+                const active = label === "Sessions" ? pathname?.startsWith("/chat") : pathname?.startsWith(href) && href !== "/chat"
+                return (
+                  <Link
+                    key={label}
+                    href={href === "/chat" ? `/chat?session=${activeSessionId}` : href}
+                    className={cn(
+                      "group flex h-8 items-center gap-2.5 rounded-md px-2 text-[13px] font-normal transition-colors",
+                      active && label === "Sessions"
+                        ? "text-stone-950"
+                        : "text-stone-500 hover:bg-stone-200/45 hover:text-stone-950",
+                    )}
+                  >
+                    <Icon size={15} strokeWidth={1.65} className={active && label === "Sessions" ? "text-stone-900" : "text-stone-500"} />
+                    <span className="flex-1">{label}</span>
+                    {badge && <span className="rounded-md bg-stone-200/70 px-1.5 py-0.5 text-[11px] text-stone-500">{badge}</span>}
+                  </Link>
+                )
+              })}
+            </div>
+          </nav>
+
+          <div className="mt-3 flex-1 overflow-y-auto px-2.5 no-scrollbar">
+            <div className="mb-2 flex items-center justify-between px-2">
+              <button onClick={() => setRecentOpen((value) => !value)} className="text-[12px] font-normal text-stone-500 transition-colors hover:text-stone-800">
+                Recent
+              </button>
+              <div className="flex items-center gap-1 text-stone-400">
+                <button onClick={() => setSessionSearchOpen((value) => !value)} className="rounded p-1 transition-colors hover:bg-stone-200/50 hover:text-stone-700" aria-label="Search sessions">
+                  <CircleHelp size={14} strokeWidth={1.6} />
+                </button>
+                <button onClick={handleNewChat} className="rounded p-1 transition-colors hover:bg-stone-200/50 hover:text-stone-700" aria-label="New session">
+                  <Plus size={15} strokeWidth={1.6} />
+                </button>
+              </div>
+            </div>
+
+            {sessionSearchOpen && (
+              <input
+                value={sessionSearch}
+                onChange={(event) => setSessionSearch(event.target.value)}
+                autoFocus
+                placeholder="Search sessions"
+                className="mb-2 w-full rounded-md bg-white px-2.5 py-1.5 text-[12.5px] text-stone-800 outline-none ring-1 ring-stone-200 placeholder:text-stone-400"
+              />
+            )}
+
+            {recentOpen && (
+              <div className="space-y-0.5">
+                {sessions.filter((session) => session.label.toLowerCase().includes(sessionSearch.toLowerCase())).map((session) => {
+                  const active = activeSessionId === session.id
                   return (
                     <button
                       key={session.id}
                       onClick={() => router.push(`/chat?session=${session.id}`)}
                       className={cn(
-                        "w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-colors text-left",
-                        isActive
-                          ? 'bg-stone-100 text-stone-900'
-                          : 'text-stone-500 hover:bg-stone-50 hover:text-stone-900'
+                        "w-full rounded-md px-2.5 py-2 text-left transition-colors",
+                        active ? "bg-stone-200/70" : "hover:bg-stone-200/45",
                       )}
                     >
-                      <div className="flex-1 truncate text-[13px] font-normal">{session.label}</div>
+                      <div className="truncate text-[13px] font-normal text-stone-800">{session.label}</div>
+                      <div className="mt-0.5 flex items-center gap-1.5 text-[12px] text-stone-500">
+                        <span>{active ? "Active session" : "Local session"}</span>
+                      </div>
                     </button>
-                  );
+                  )
                 })}
               </div>
             )}
-          </div>
 
-          {/* Recent Commands Section */}
-          <div className="pt-2">
-            <button
-              onClick={() => toggleSection('recent')}
-              className="w-full flex items-center justify-between px-3 py-1.5 group"
-            >
-              <span className="text-[11px] font-normal text-stone-400 uppercase tracking-[0.14em] group-hover:text-stone-500 transition-colors">Recent Commands</span>
-              <ChevronDown
-                strokeWidth={1.5}
-                size={14}
-                className={`text-stone-400/70 transition-transform duration-200 ${expandedSections.recent ? 'rotate-0' : '-rotate-90'}`}
-              />
-            </button>
-
-            {expandedSections.recent && (
-              <div className="mt-1 space-y-0.5">
-                {recentCommands.map((cmd, index) => (
-                  <button
-                    key={index}
-                    onClick={() => handleCommandClick(cmd)}
-                    className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-stone-500 hover:bg-stone-50 hover:text-stone-900 transition-colors text-left"
-                    title="Click to paste command into terminal"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[12.5px] truncate font-mono text-stone-600">$ {cmd}</div>
-                    </div>
-                  </button>
-                ))}
+            {/* Workflow Status Section */}
+            <div className="mt-6 px-2">
+              <div className="text-[12px] font-normal text-stone-500 mb-2">Workflow</div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-[12px]">
+                  <span className="text-stone-600">Status</span>
+                  <span className="text-emerald-600 font-medium">Ready</span>
+                </div>
+                <div className="flex items-center justify-between text-[12px]">
+                  <span className="text-stone-600">Files indexed</span>
+                  <span className="text-stone-700 font-mono">—</span>
+                </div>
+                <div className="flex items-center justify-between text-[12px]">
+                  <span className="text-stone-600">Last sync</span>
+                  <span className="text-stone-500 font-mono text-[11px]">—</span>
+                </div>
               </div>
-            )}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="p-3 border-t border-stone-100">
-          <button className="w-full flex items-center gap-3 px-3 py-2 text-stone-500 hover:bg-stone-50 hover:text-stone-900 rounded-xl transition-colors">
-            <div className="w-6 h-6 rounded-full bg-stone-100 border border-stone-200/60 flex items-center justify-center shrink-0">
-              <span className="text-[10px] font-normal text-stone-500">D</span>
             </div>
-            <span className="text-[13px] font-normal">Danik</span>
-          </button>
+          </div>
+
+          <div className="flex items-center justify-between px-3 py-3">
+            <Link href="/settings" className="flex h-8 items-center gap-2 rounded-md px-2 text-[13px] text-stone-700 transition-colors hover:bg-stone-200/50">
+              <Settings size={15} strokeWidth={1.65} />
+              Settings
+            </Link>
+            <span className="rounded-full px-2 py-1 text-[11px] text-stone-400">{agentName}</span>
+          </div>
         </div>
       </aside>
 
-      {/* Mobile Overlay */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-stone-900/10 backdrop-blur-sm z-30 lg:hidden transition-opacity"
-          onClick={onToggle}
-        />
-      )}
+      {isOpen && <div className="fixed inset-0 z-30 bg-stone-900/5 backdrop-blur-[1px] lg:hidden" onClick={onToggle} />}
     </>
-  );
+  )
 }
